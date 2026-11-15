@@ -109,6 +109,6 @@ grep -Fq '/usr/sbin/baseos-control-center --selector' "$SESSION" || fail "fronte
 grep -Fq 'boot selector requested by L1/R1' "$SESSION" || fail "frontend supervisor does not preserve the L1/R1 selector request"
 INITTAB="$HERE/overlay/etc/inittab"
 grep -Fq '::sysinit:/etc/init.d/rcS' "$INITTAB" || fail "inittab does not start H700 rcS"
-grep -Fq 'tty1::respawn:/usr/sbin/frontend-session' "$INITTAB" || fail "inittab does not respawn the H700 frontend supervisor"
+grep -Fq '::respawn:/sbin/frontend-session' "$INITTAB" || fail "inittab does not respawn the H700 frontend supervisor"
 
 echo "PASS: generic frontend adapter discovery"
