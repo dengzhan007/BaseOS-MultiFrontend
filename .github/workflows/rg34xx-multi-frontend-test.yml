@@ -1,0 +1,96 @@
+name: RG34XX multi-frontend test build
+
+on:
+  push:
+    branches:
+      - "test/rg34xx-multi-frontend"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rg34xx-multi-frontend-test
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Test and build RG34XX image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out test branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Enable arm64 Docker builds
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip zstd qemu-system-aarch64 cpio shellcheck
+
+      - name: Validate H700 multi-frontend logic
+        run: |
+          ./tests/test-frontend-adapters.sh
+          ./tests/test-frontend-packages.sh
+          ./tests/test-frontend-compat.sh
+          ./tests/test-frontend-manager.sh
+          ./tests/test-frontend-paths.sh
+          ./tests/test-frontend-session.sh
+          ./tests/test-baseos-config.sh
+          ./tests/test-boot-menu-held.sh
+
+      - name: Restore prepared RG34XX inputs
+        run: ./fetch-prepared.sh rg34xx
+
+      - name: Build static H700 tools and framebuffer selector
+        run: ./build-tools.sh
+
+      - name: Build RG34XX root filesystem
+        run: ./build-rootfs.sh rg34xx
+
+      - name: QEMU userspace boot smoke test
+        run: ./test-boot-qemu.sh rg34xx
+
+      - name: Assemble and verify full RG34XX image
+        run: ./build-image.sh rg34xx
+
+      - name: Package test image and write provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d ' \n' < VERSION)"
+          work="work/rg34xx"
+          name="baseos-rg34xx-${version}-multi-frontend-test"
+          zip -q -1 -j -X "$work/${name}.img.zip" "$work/baseos-rg34xx.img"
+          sha256sum "$work/${name}.img.zip" > "$work/${name}.sha256"
+          {
+            echo "artifact=RG34XX multi-frontend test image"
+            echo "target=rg34xx"
+            echo "version=$version"
+            echo "commit=$GITHUB_SHA"
+            echo "created_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "source_image=baseos-rg34xx.img"
+            echo "update_package=not_built (test image only)"
+            echo "hardware_validation=not_performed_by_CI"
+          } > "$work/${name}.build.txt"
+          ls -lh "$work/${name}.img.zip" "$work/${name}.sha256" "$work/${name}.build.txt"
+
+      - name: Upload temporary test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: RG34XX-MultiFrontend-Test-${{ github.sha }}
+          path: |
+            work/rg34xx/baseos-rg34xx-*-multi-frontend-test.img.zip
+            work/rg34xx/baseos-rg34xx-*-multi-frontend-test.sha256
+            work/rg34xx/baseos-rg34xx-*-multi-frontend-test.build.txt
+          if-no-files-found: error
+          retention-days: 21
