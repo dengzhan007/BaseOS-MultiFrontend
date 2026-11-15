@@ -13,6 +13,10 @@ docker run --rm -i --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   alpine:3.20 sh -eu <<'TEST'
 mkdir -p /usr/local/bin /usr/sbin /mnt/sdcard /data /run /dev
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Rootfs installation marks these service scripts executable; mirror that
+# mode because this test bind-mounts the source files directly.
+chmod 755 /usr/sbin/frontend-session /usr/sbin/baseos-frontend-compat \
+  /usr/sbin/baseos-frontend-discovery
 ln -s /mnt/sdcard /mnt/SDCARD
 mkdir -p /data/boot-pair-v2
 : > /data/boot-pair-v2/complete
