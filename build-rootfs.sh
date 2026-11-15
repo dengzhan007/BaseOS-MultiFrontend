@@ -112,6 +112,10 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   # first — the same hazard the fbsplash applet has further down.
   rm -f "$R/usr/sbin/poweroff" "$R/usr/sbin/reboot"
   cp -R /overlay/. "$R/"
+  # The framebuffer control center is a compiled static tool, not an overlay
+  # script. Install it before the boot-critical chmod/permission audit below.
+  cp /tools/baseos-control-center "$R/usr/sbin/baseos-control-center"
+  chmod 755 "$R/usr/sbin/baseos-control-center"
   # Target identity is generated here; the overlay contains no device-specific
   # model data. BASEOS_DEVICE is the frontend family, while BASEOS_TARGET is
   # the exact hardware build target. BASEOS_PANEL_ROTATION_CCW is read by
@@ -223,8 +227,6 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
     chmod 755 "$R/usr/bin/fbsplash"
     mkdir -p "$R/usr/share/baseos"
     cp /assets/boot.ttf "$R/usr/share/baseos/boot.ttf"
-    cp /tools/baseos-control-center "$R/usr/sbin/baseos-control-center"
-    chmod 755 "$R/usr/sbin/baseos-control-center"
     [ -f /assets/OFL.txt ] && cp /assets/OFL.txt "$R/usr/share/baseos/boot.ttf.OFL.txt"
   fi
   # gptgrow: first-boot expand-to-fill of the FAT data partition.
