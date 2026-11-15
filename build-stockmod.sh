@@ -38,6 +38,7 @@ if [ ! -x "$HERE/work/tools/busybox" ] \
   || [ ! -x "$HERE/work/tools/dropbearmulti" ] \
   || [ ! -x "$HERE/work/tools/curl" ] \
   || [ ! -x "$HERE/work/tools/fbsplash" ] \
+  || [ ! -x "$HERE/work/tools/baseos-control-center" ] \
   || [ ! -x "$HERE/work/tools/gptgrow" ] \
   || [ ! -x "$HERE/work/tools/gptslot" ] \
   || [ ! -x "$HERE/work/tools/sftp-server" ] \
