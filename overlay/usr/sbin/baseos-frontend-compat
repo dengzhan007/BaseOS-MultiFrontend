@@ -207,7 +207,16 @@ scan_root() {
       printf '%s\n' '  generic-binary) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
       printf '%s\n' '  generic-shell) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
       printf '%s\n' '  nextui) cd "$BASEOS_COMPAT_PROGRAM_DIR"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  spruce) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
+      printf '%s\n' '  spruce) \
+    export ROMS_PATH="${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}/Roms/" \
+           FAVORITES_PATH="$BASEOS_FAVORITES_DIR/pyui-favorites.json" \
+           RECENTS_PATH="$BASEOS_RECENTS_DIR/pyui-recents.json" \
+           APPS_CONFIG_PATH="$BASEOS_CONFIG_DIR/pyui-apps.json" \
+           COLLECTIONS_PATH="$BASEOS_CONFIG_DIR/collections/" \
+           STATE_PATH="$BASEOS_CONFIG_DIR/pyui-state.json"; \
+    mkdir -p "$BASEOS_CONFIG_DIR/collections"; \
+    cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; \
+    exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
       printf '%s\n' '  *) echo "unsupported compatibility launch mode" >&2; exit 126 ;;'
       printf '%s\n' 'esac'
     } | write_if_changed "$sr_sidecar/launch.sh"
