@@ -258,7 +258,7 @@ static void read_field(char **fields, int n, int index, char *dst, size_t cap)
 
 static void load_current_default(void)
 {
-    FILE *fp = fopen("/mnt/sdcard/baseos.conf", "r");
+    FILE *fp = fopen("/run/baseos.conf", "r");
     char line[256];
     snprintf(current_default_id, sizeof(current_default_id), "auto");
     if (!fp) return;
