@@ -202,7 +202,7 @@ scan_root() {
       printf 'cd "$BASEOS_COMPAT_PROGRAM_DIR"\n'
       printf '%s\n' 'case "$BASEOS_COMPAT_MODE" in'
       printf '%s\n' '  sh) cd "$BASEOS_COMPAT_PROGRAM_DIR"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  exec) exec "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
+      printf '%s\n' '  exec) exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
       printf '%s\n' '  slot-binary) SLOT_ROOT=${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}; export SLOT_ROOT; cd "$SLOT_ROOT"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
       printf '%s\n' '  generic-binary) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
       printf '%s\n' '  generic-shell) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
