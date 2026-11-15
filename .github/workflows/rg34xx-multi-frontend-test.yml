@@ -39,29 +39,29 @@ jobs:
 
       - name: Validate H700 multi-frontend logic
         run: |
-          ./tests/test-frontend-adapters.sh
-          ./tests/test-frontend-packages.sh
-          ./tests/test-frontend-compat.sh
-          ./tests/test-frontend-manager.sh
-          ./tests/test-frontend-paths.sh
-          ./tests/test-frontend-session.sh
-          ./tests/test-baseos-config.sh
-          ./tests/test-boot-menu-held.sh
+          sh ./tests/test-frontend-adapters.sh
+          sh ./tests/test-frontend-packages.sh
+          sh ./tests/test-frontend-compat.sh
+          sh ./tests/test-frontend-manager.sh
+          sh ./tests/test-frontend-paths.sh
+          sh ./tests/test-frontend-session.sh
+          sh ./tests/test-baseos-config.sh
+          sh ./tests/test-boot-menu-held.sh
 
       - name: Restore prepared RG34XX inputs
-        run: ./fetch-prepared.sh rg34xx
+        run: sh ./fetch-prepared.sh rg34xx
 
       - name: Build static H700 tools and framebuffer selector
-        run: ./build-tools.sh
+        run: sh ./build-tools.sh
 
       - name: Build RG34XX root filesystem
-        run: ./build-rootfs.sh rg34xx
+        run: sh ./build-rootfs.sh rg34xx
 
       - name: QEMU userspace boot smoke test
-        run: ./test-boot-qemu.sh rg34xx
+        run: sh ./test-boot-qemu.sh rg34xx
 
       - name: Assemble and verify full RG34XX image
-        run: ./build-image.sh rg34xx
+        run: sh ./build-image.sh rg34xx
 
       - name: Package test image and write provenance
         shell: bash
