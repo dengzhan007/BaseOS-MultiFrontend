@@ -103,6 +103,9 @@ compat_needs_scan() {
   cns_root=$1
   cns_state=$cns_root/.baseos/compat.scan-state
   [ -f "$cns_state" ] && [ ! -L "$cns_state" ] || return 0
+  # Force one rescan after upgrading from the earlier scanner contract. This
+  # discovers H700-specific entrypoints without relying on directory mtimes.
+  [ "$(cat "$cns_state" 2>/dev/null)" = "frontend-compat-api=2" ] || return 0
   if [ -d "$cns_root/Frontends" ]; then
     [ "$cns_root/Frontends" -nt "$cns_state" ] && return 0
     for cns_dir in "$cns_root"/Frontends/*; do
@@ -128,6 +131,10 @@ compat_needs_scan() {
       *) return 0 ;;
     esac
     [ -f "$cns_root/Frontends/$cns_source/$cns_entry" ] || return 0
+    baseos_frontend_read_value "$cns_manifest" compat_entrypoint_stat ""
+    cns_expected_stat=$BASEOS_VALUE
+    cns_actual_stat=$(stat -c '%Y:%s' "$cns_root/Frontends/$cns_source/$cns_entry" 2>/dev/null || echo unknown)
+    [ "$cns_actual_stat" = "$cns_expected_stat" ] || return 0
   done
   return 1
 }
@@ -218,7 +225,7 @@ scan_root() {
   fi
   state=$sr_root/.baseos/compat.scan-state
   [ ! -L "$state" ] || return 0
-  : > "$state" 2>/dev/null || :
+  printf '%s\n' 'frontend-compat-api=2' > "$state" 2>/dev/null || :
 }
 
 case "${1:-scan}" in
