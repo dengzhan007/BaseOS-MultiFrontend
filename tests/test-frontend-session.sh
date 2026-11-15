@@ -6,15 +6,16 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 . "$HERE/tools/docker-platform.sh"
 
 docker run --rm -i --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
-  -v "$HERE/overlay/usr/sbin/frontend-session":/usr/sbin/frontend-session:ro \
-  -v "$HERE/overlay/usr/sbin/baseos-frontend-compat":/usr/sbin/baseos-frontend-compat:ro \
-  -v "$HERE/overlay/usr/sbin/baseos-frontend-discovery":/usr/sbin/baseos-frontend-discovery:ro \
+  -v "$HERE/overlay/usr/sbin/frontend-session":/tmp/frontend-session.src:ro \
+  -v "$HERE/overlay/usr/sbin/baseos-frontend-compat":/tmp/baseos-frontend-compat.src:ro \
+  -v "$HERE/overlay/usr/sbin/baseos-frontend-discovery":/tmp/baseos-frontend-discovery.src:ro \
   -v "$HERE/overlay/usr/share/baseos/boot-log.sh":/usr/share/baseos/boot-log.sh:ro \
   alpine:3.20 sh -eu <<'TEST'
 mkdir -p /usr/local/bin /usr/sbin /mnt/sdcard /data /run /dev
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# Rootfs installation marks these service scripts executable; mirror that
-# mode because this test bind-mounts the source files directly.
+cp /tmp/frontend-session.src /usr/sbin/frontend-session
+cp /tmp/baseos-frontend-compat.src /usr/sbin/baseos-frontend-compat
+cp /tmp/baseos-frontend-discovery.src /usr/sbin/baseos-frontend-discovery
 chmod 755 /usr/sbin/frontend-session /usr/sbin/baseos-frontend-compat \
   /usr/sbin/baseos-frontend-discovery
 ln -s /mnt/sdcard /mnt/SDCARD
