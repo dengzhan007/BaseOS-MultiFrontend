@@ -169,11 +169,12 @@ if [ -r "$SD/baseos.conf" ]; then
 fi
 [ -n "$FRONTEND_PREFERENCE" ] || FRONTEND_PREFERENCE=auto
 
-# Either L1 or R1 opens the selector. MENU stays reserved for USB storage.
+# rcS samples L1/R1 before storage mount and passes the result through /run.
+# Consume it once so init respawns never reopen the selector unexpectedly.
 if [ ! -e /run/baseos-frontend-selector-boot-checked ]; then
 	: > /run/baseos-frontend-selector-boot-checked
-	if [ -x /usr/sbin/baseos-control-center ] &&
-	   /usr/sbin/baseos-control-center --boot-held; then
+	if [ -e /run/baseos-frontend-select.boot-request ]; then
+		rm -f /run/baseos-frontend-select.boot-request
 		log "boot selector requested by L1/R1"
 		: > /run/baseos-frontend-selector-shown
 		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
@@ -190,7 +191,6 @@ if [ ! -e /run/baseos-frontend-selector-boot-checked ]; then
 		fi
 	fi
 fi
-
 # Compatibility wrappers are BaseOS sidecars; no frontend files are rewritten.
 if [ -x /usr/sbin/baseos-frontend-manager ] &&
    BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
@@ -443,7 +443,7 @@ if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 		/usr/sbin/baseos-control-center --diagnostics >/dev/null 2>&1 || :
 	fi
 	sleep 3
-	exit 1
+	exit "$frontend_status"
 fi
 
 # With no installed frontend, open the same selector once so the user can
