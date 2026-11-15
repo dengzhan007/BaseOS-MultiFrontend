@@ -25,7 +25,15 @@ valid_hostname "$default_name" || default_name=baseos
 name=$default_name
 mdns=true
 headphone_pop_fix=false
+frontend_id=auto
 password=
+
+valid_frontend_id() {
+	case "$1" in
+		''|.*|-*|_*|*[!A-Za-z0-9._-]*|*'/'*|*'|'*) return 1 ;;
+	esac
+	[ "${#1}" -le 48 ]
+}
 
 if [ -f "$CONFIG" ] && [ -r "$CONFIG" ]; then
 	while IFS= read -r line || [ -n "$line" ]; do
@@ -56,6 +64,12 @@ if [ -f "$CONFIG" ] && [ -r "$CONFIG" ]; then
 				mdns=true
 				case "$value" in true|false) mdns=$value ;; esac
 				;;
+			frontend_id)
+				frontend_id=auto
+				if [ "$value" = auto ] || valid_frontend_id "$value"; then
+					frontend_id=$value
+				fi
+				;;
 		esac
 	done < "$CONFIG"
 fi
@@ -82,5 +96,14 @@ unset password
 umask 022
 printf '%s\n' "$name" > "$RUN/hostname"
 printf '127.0.0.1 localhost %s\n::1 localhost\n' "$name" > "$RUN/hosts"
-printf 'hostname=%s\nmdns=%s\nheadphone_pop_fix=%s\n' "$name" "$mdns" "$headphone_pop_fix" > "$RUN/baseos.conf"
+printf 'hostname=%s\nmdns=%s\nheadphone_pop_fix=%s\nfrontend_id=%s\n' \
+	"$name" "$mdns" "$headphone_pop_fix" "$frontend_id" > "$RUN/baseos.conf"
+# Remember where frontend_id must be written back. A second-card boot reads
+# TF1 through a temporary read-only mount; the manager remounts it only when
+# the user explicitly changes the default frontend.
+case "$CONFIG" in
+	/dev/null) printf '%s\n' /dev/null > "$RUN/baseos-config-target" ;;
+	/mnt/system/baseos.conf) printf '%s\n' /dev/mmcblk0p7 > "$RUN/baseos-config-target" ;;
+	*) printf '%s\n' "$CONFIG" > "$RUN/baseos-config-target" ;;
+esac
 "$HOSTNAME_BIN" "$name"
