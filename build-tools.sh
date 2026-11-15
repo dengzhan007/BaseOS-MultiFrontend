@@ -81,6 +81,18 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   strip /out/fbsplash
 '
 
+# baseos-control-center: interactive H700 framebuffer selector/diagnostics UI.
+# Like fbsplash it renders directly to fb0; H700 kernels do not provide fbcon.
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
+  -v "$TOOLS":/out -v "$HERE/src":/src:ro alpine:3.20 sh -euc '
+  apk add -q build-base linux-headers pkgconf \
+    freetype-dev freetype-static zlib-static libpng-static bzip2-static brotli-static
+  gcc -std=c11 -static -O2 -Wall -Wextra \
+    $(pkg-config --cflags freetype2) -o /out/baseos-control-center /src/baseos-control-center.c \
+    $(pkg-config --static --libs freetype2)
+  strip /out/baseos-control-center
+'
+
 # gptgrow: zero-dependency static tool that grows the last GPT partition to
 # fill the card on first boot (see tools/gptgrow.c).
 # gptslot: A/B root-slot arithmetic — derives the slot geometry from the GPT
@@ -236,8 +248,11 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
 '
 
 file "$TOOLS/busybox" "$TOOLS/dropbearmulti" "$TOOLS/curl" \
-  "$TOOLS/fbsplash" "$TOOLS/gptgrow" "$TOOLS/gptslot" "$TOOLS/sftp-server" \
+  "$TOOLS/fbsplash" "$TOOLS/baseos-control-center" "$TOOLS/gptgrow" "$TOOLS/gptslot" "$TOOLS/sftp-server" \
   "$TOOLS/adbd" "$TOOLS/axp-off" "$TOOLS/avahi-daemon" 2>/dev/null || true
+[ -x "$TOOLS/baseos-control-center" ] || { echo "baseos-control-center build did not produce an executable" >&2; exit 1; }
+file "$TOOLS/baseos-control-center" | grep -q "statically linked" \
+  || { echo "baseos-control-center build is not static" >&2; exit 1; }
 [ -x "$TOOLS/gptslot" ] || { echo "gptslot build did not produce an executable" >&2; exit 1; }
 [ -x "$TOOLS/charger-wait" ] || { echo "charger-wait build did not produce an executable" >&2; exit 1; }
 [ -x "$TOOLS/axp-off" ] || { echo "axp-off build did not produce an executable" >&2; exit 1; }
