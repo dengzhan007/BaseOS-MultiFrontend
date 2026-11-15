@@ -111,4 +111,17 @@ INITTAB="$HERE/overlay/etc/inittab"
 grep -Fq '::sysinit:/etc/init.d/rcS' "$INITTAB" || fail "inittab does not start H700 rcS"
 grep -Fq '::respawn:/sbin/frontend-session' "$INITTAB" || fail "inittab does not respawn the H700 frontend supervisor"
 
+# The H700 boot selector is a single-key shoulder shortcut: either L1
+# or R1 enters it. MENU-triggered USB storage keeps priority in rcS.
+CONTROL_CENTER="$HERE/src/baseos-control-center.c"
+RCS="$HERE/overlay/etc/init.d/rcS"
+grep -Fq 'key_is_down(BTN_TL) || key_is_down(BTN_TR)' "$CONTROL_CENTER" \
+  || fail "boot selector must accept L1 OR R1, not require both"
+grep -Fq '/usr/sbin/baseos-control-center --boot-held' "$RCS" \
+  || fail "rcS does not sample the shoulder selector request"
+grep -Fq 'if [ "$USB_STORAGE_MODE" -eq 0 ]' "$RCS" \
+  || fail "shoulder selector request is not gated behind USB-storage priority"
+grep -Fq 'boot selector requested by L1/R1' "$SESSION" \
+  || fail "frontend session does not consume the one-shot shoulder request"
+
 echo "PASS: generic frontend adapter discovery"
