@@ -69,6 +69,7 @@ mkdir -p "$TF1/Frontends/H700Slot/System" \
   "$TF1/Frontends/H700NextUI/.system/h700/paks/MinUI.pak" \
   "$TF1/Frontends/H700Spruce/spruce/scripts"
 printf '\\177ELF\\002\\001\\001\\000compat-binary-fixture' > "$TF1/Frontends/H700Slot/System/slot"
+[ "$(od -An -N4 -tx1 "$TF1/Frontends/H700Slot/System/slot" | tr -d '[:space:]')" = 7f454c46 ] || fail "binary fixture does not contain an ELF magic header"
 printf '%s\\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/H700NextUI/.system/h700/paks/MinUI.pak/launch.sh"
 printf '%s\\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/H700Spruce/spruce/scripts/runtime.sh"
 cp "$TF1/Frontends/H700Slot/System/slot" "$TMP/slot.before"
