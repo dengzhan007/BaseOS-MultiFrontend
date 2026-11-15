@@ -7,7 +7,7 @@ export PATH
 TF1=${BASEOS_FRONTEND_TF1:-/mnt/sdcard}
 TF2=${BASEOS_FRONTEND_TF2:-$TF1}
 CATALOG=${BASEOS_FRONTEND_CATALOG:-/run/baseos-frontend-catalog}
-CONFIG=$TF1/baseos.conf
+CONFIG=${BASEOS_FRONTEND_CONFIG:-$TF1/baseos.conf}
 
 valid_package_id() { baseos_frontend_valid_id "$1" && [ "${#1}" -le 22 ]; }
 valid_profile_id() { baseos_frontend_valid_id "$1" && [ "${#1}" -le 22 ]; }
@@ -382,6 +382,10 @@ write_default() {
   ' "$CONFIG" > "$default_tmp" || { rm -f "$default_tmp"; return 1; }
   mv -f "$default_tmp" "$CONFIG" || { rm -f "$default_tmp"; return 1; }
   sync
+  if [ -n "${BASEOS_FRONTEND_CONFIG:-}" ] &&
+     [ -x /usr/sbin/baseos-config-save ]; then
+    /usr/sbin/baseos-config-save frontend_id "$default_id" || return 1
+  fi
 }
 
 migrate_default_package_alias() {
