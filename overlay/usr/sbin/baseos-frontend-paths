@@ -280,6 +280,20 @@ state_file() {
   printf '%s' "$1/.baseos/frontend-paths/active"
 }
 
+# A profile-private asset temporarily replaces an empty card-root placeholder.
+# Once its runtime alias is removed, restore the canonical shared root so that
+# the next profile and file managers still have a stable card-level directory.
+restore_shared_asset_root() {
+  rsa_root=$1 rsa_name=$2
+  case "$rsa_name" in
+    Bios|BIOS|bios) mkdir -p "$rsa_root/Bios" ;;
+    Cheats|cheats) mkdir -p "$rsa_root/Cheats" ;;
+    Overlays|overlays) mkdir -p "$rsa_root/Overlays" ;;
+    Shaders|shaders) mkdir -p "$rsa_root/Shaders" ;;
+    *) return 0 ;;
+  esac
+}
+
 cleanup_aliases() {
   ca_root=$1
   safe_dir "$ca_root" || return 1
@@ -303,6 +317,10 @@ cleanup_aliases() {
         ca_path=$ca_root/$ca_name
         if [ -L "$ca_path" ] && [ "$(readlink "$ca_path" 2>/dev/null || :)" = "$ca_source" ]; then
           rm -f -- "$ca_path"
+          restore_shared_asset_root "$ca_root" "$ca_name" || {
+            log "WARNING: could not restore shared asset root for $ca_name"
+            ca_failed=yes
+          }
           log "removed temporary alias $ca_path"
         fi
         ;;
@@ -334,6 +352,10 @@ cleanup_aliases() {
         if [ -d "$ca_name" ] && [ ! -L "$ca_name" ]; then
           rmdir "$ca_name" 2>/dev/null || :
         fi
+        restore_shared_asset_root "$ca_root" "${ca_name##*/}" || {
+          log "WARNING: could not restore shared asset root for ${ca_name##*/}"
+          ca_failed=yes
+        }
         ;;
     esac
   done < "$ca_state"
