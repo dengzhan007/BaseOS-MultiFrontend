@@ -36,7 +36,7 @@ EOF
 chmod 755 "$TMP/bin/mkpasswd"
 
 reset_runtime() { rm -f "$TMP/run"/*; : > "$TMP/events"; }
-apply() { reset_runtime; sh "$SCRIPT" "$@"; }
+apply() { reset_runtime; sh -x "$SCRIPT" "$@"; }
 check_runtime() {
 	[ "$(cat "$TMP/run/hostname")" = "$1" ] || fail "runtime hostname: $1"
 	printf '127.0.0.1 localhost %s\n::1 localhost\n' "$1" > "$TMP/want"
