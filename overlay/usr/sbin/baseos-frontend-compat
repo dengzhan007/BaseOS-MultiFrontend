@@ -113,6 +113,62 @@ resolve_entrypoint() {
   return 1
 }
 
+launch_compat() {
+  lc_root=$1 lc_entry=$2 lc_mode=$3
+  case "$lc_entry" in
+    ''|/*|*'..'*|*'|'*|*[!A-Za-z0-9._/-]*) return 126 ;;
+  esac
+  [ -f "$lc_root/$lc_entry" ] && [ ! -L "$lc_root/$lc_entry" ] || return 126
+  lc_card=${BASEOS_CARD_ROOT:-$lc_root}
+  lc_target=$lc_root/$lc_entry
+  case "$lc_mode" in
+    script-package)
+      cd "$lc_root" || return 126
+      exec /bin/sh "$lc_target"
+      ;;
+    script-pak)
+      cd "$(dirname "$lc_target")" || return 126
+      exec /bin/sh "$lc_target"
+      ;;
+    script-card)
+      cd "$lc_card" || return 126
+      exec /bin/sh "$lc_target"
+      ;;
+    script-runtime)
+      export ROMS_PATH="$lc_card/Roms/"
+      if [ -n "${BASEOS_FAVORITES_DIR:-}" ]; then
+        export FAVORITES_PATH="$BASEOS_FAVORITES_DIR/pyui-favorites.json"
+      fi
+      if [ -n "${BASEOS_RECENTS_DIR:-}" ]; then
+        export RECENTS_PATH="$BASEOS_RECENTS_DIR/pyui-recents.json"
+      fi
+      if [ -n "${BASEOS_CONFIG_DIR:-}" ]; then
+        export APPS_CONFIG_PATH="$BASEOS_CONFIG_DIR/pyui-apps.json"
+        export COLLECTIONS_PATH="$BASEOS_CONFIG_DIR/collections/"
+        export STATE_PATH="$BASEOS_CONFIG_DIR/pyui-state.json"
+        mkdir -p "$BASEOS_CONFIG_DIR/collections"
+      fi
+      cd "$lc_card" || return 126
+      exec /bin/sh "$lc_target"
+      ;;
+    binary-card)
+      # Keep the historical card-root alias for existing H700 binary payloads.
+      BASEOS_CARD_ROOT=$lc_card SLOT_ROOT=$lc_card
+      export BASEOS_CARD_ROOT SLOT_ROOT
+      cd "$lc_card" || return 126
+      exec /lib/ld-linux-aarch64.so.1 "$lc_target"
+      ;;
+    binary-package)
+      cd "$lc_root" || return 126
+      exec /lib/ld-linux-aarch64.so.1 "$lc_target"
+      ;;
+    *)
+      echo "unsupported compatibility launch mode: $lc_mode" >&2
+      return 126
+      ;;
+  esac
+}
+
 compat_needs_scan() {
   cns_root=$1
   cns_state=$cns_root/.baseos/compat.scan-state
@@ -213,24 +269,7 @@ scan_root() {
       printf 'BASEOS_COMPAT_MODE=%s\n' "$sr_mode_quote"
       printf '%s\n' 'export BASEOS_COMPAT_PROGRAM_DIR'
       printf 'cd "$BASEOS_COMPAT_PROGRAM_DIR"\n'
-      printf '%s\n' 'case "$BASEOS_COMPAT_MODE" in'
-      printf '%s\n' '  script-package) cd "$BASEOS_COMPAT_PROGRAM_DIR"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  script-pak) entry="$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT"; cd "${entry%/*}"; exec /bin/sh "$entry" ;;'
-      printf '%s\n' '  script-card) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  script-runtime) \\
-    export ROMS_PATH="${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}/Roms/" \\
-           FAVORITES_PATH="$BASEOS_FAVORITES_DIR/pyui-favorites.json" \\
-           RECENTS_PATH="$BASEOS_RECENTS_DIR/pyui-recents.json" \\
-           APPS_CONFIG_PATH="$BASEOS_CONFIG_DIR/pyui-apps.json" \\
-           COLLECTIONS_PATH="$BASEOS_CONFIG_DIR/collections/" \\
-           STATE_PATH="$BASEOS_CONFIG_DIR/pyui-state.json"; \\
-    mkdir -p "$BASEOS_CONFIG_DIR/collections"; \\
-    cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; \\
-    exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  binary-card) SLOT_ROOT=${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}; export SLOT_ROOT; cd "$SLOT_ROOT"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  binary-package) cd "$BASEOS_COMPAT_PROGRAM_DIR"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  *) echo "unsupported compatibility launch mode" >&2; exit 126 ;;'
-      printf '%s\n' 'esac'
+      printf '%s\\n' 'exec /usr/sbin/baseos-frontend-compat launch "$BASEOS_COMPAT_PROGRAM_DIR" "$BASEOS_COMPAT_ENTRYPOINT" "$BASEOS_COMPAT_MODE"'
     } | write_if_changed "$sr_sidecar/launch.sh"
     {
       printf '%s\n' 'profile_api=1'
@@ -255,8 +294,20 @@ case "${1:-scan}" in
     if [ "$#" -eq 0 ]; then set -- "$TF2" "$TF1"; fi
     for root in "$@"; do scan_root "$root"; done
     ;;
+  probe)
+    [ "$#" -eq 2 ] || exit 2
+    if resolve_entrypoint "$2"; then
+      printf '%s|%s\\n' "$COMPAT_ENTRY" "$COMPAT_MODE"
+    else
+      exit 1
+    fi
+    ;;
+  launch)
+    [ "$#" -eq 4 ] || exit 2
+    launch_compat "$2" "$3" "$4"
+    ;;
   *)
-    echo "usage: baseos-frontend-compat [scan [TF2_ROOT TF1_ROOT]]" >&2
+    echo "usage: baseos-frontend-compat [scan [TF2_ROOT TF1_ROOT] | probe ROOT | launch ROOT ENTRY MODE]" >&2
     exit 2
     ;;
 esac
