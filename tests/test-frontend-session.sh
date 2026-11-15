@@ -83,6 +83,7 @@ cat > /mnt/sdcard/.system/h700/paks/sample.pak/launch.sh <<'EOF'
 #!/bin/sh
 [ "$PWD" = /mnt/sdcard/.system/h700/paks/sample.pak ] || exit 82
 echo pak > /tmp/frontend.log
+if [ -f /tmp/frontend-exit ]; then exit "$(cat /tmp/frontend-exit)"; fi
 EOF
 mkdir -p /mnt/sdcard/runtime/scripts
 cat > /mnt/sdcard/runtime/scripts/runtime.sh <<'EOF'
@@ -147,6 +148,7 @@ cat > /mnt/sdcard/.system/h700/paks/sample.pak/launch.sh <<'EOF'
 #!/bin/sh
 [ "$PWD" = /mnt/sdcard/.system/h700/paks/sample.pak ] || exit 82
 echo pak > /tmp/frontend.log
+if [ -f /tmp/frontend-exit ]; then exit "$(cat /tmp/frontend-exit)"; fi
 EOF
 run_session
 [ "$status" -eq 0 ] || { cat /tmp/session-console.log >&2; fail "pak script launch returned $status"; }
@@ -182,6 +184,7 @@ mkdir -p /mnt/sdcard/.system/h700/paks/sample.pak
 cat > /mnt/sdcard/.system/h700/paks/sample.pak/launch.sh <<'EOF'
 #!/bin/sh
 echo pak > /tmp/frontend.log
+if [ -f /tmp/frontend-exit ]; then exit "$(cat /tmp/frontend-exit)"; fi
 EOF
 rm -f /dev/mali0
 echo 3 > /tmp/gpu-ready-after
