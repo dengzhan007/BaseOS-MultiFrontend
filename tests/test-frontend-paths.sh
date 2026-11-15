@@ -61,7 +61,7 @@ done
 [ -f "$PROGRAM/Tools/h700/.keep" ] || fail "frontend Tools files were modified"
 [ -f "$CARD/Games/FC/test.rom" ] || fail "shared Games data was modified"
 [ -f "$MAP" ] || fail "persistent path-map config was removed during cleanup"
-[ -f "$CARD/.baseos/shared/cores/rg353ps/test_libretro.so" ] || fail "frontend core was not imported into the shared library"
+[ -f "$CARD/.baseos/shared/cores/h700/test_libretro.so" ] || fail "frontend core was not imported into the shared library"
 
 sed 's/^games_target=.*/games_target=Games/' "$MAP" > "$MAP.tmp"
 mv "$MAP.tmp" "$MAP"
@@ -84,7 +84,7 @@ done
 # a root-installed NextUI layout). That is inside the card and must still get
 # the ROM aliases; it must not be rejected as an external program path.
 ROOT_CARD=$TMP/root-card
-mkdir -p "$ROOT_CARD/.system/rg353ps/cores" "$ROOT_CARD/Tools" \
+mkdir -p "$ROOT_CARD/.system/h700/cores" "$ROOT_CARD/Tools" \
   "$ROOT_CARD/Games/FC" "$ROOT_CARD/.baseos/userdata"
 printf '%s\\n' "root-layout-rom" > "$ROOT_CARD/Games/FC/root.rom"
 sh "$HELPER" scan "$ROOT_CARD" NextUIRoot "$ROOT_CARD" || fail "root-layout path-map scan failed"
@@ -103,7 +103,7 @@ sh "$HELPER" cleanup "$ROOT_CARD" || fail "root-layout path-map cleanup failed"
 # a test stand-in for the kernel mount operation.
 FALLBACK_CARD=$TMP/fallback-card
 FAKE_BIN=$TMP/fake-bin
-mkdir -p "$FALLBACK_CARD/.system/rg353ps/cores" "$FALLBACK_CARD/Games/FC" \
+mkdir -p "$FALLBACK_CARD/.system/h700/cores" "$FALLBACK_CARD/Games/FC" \
   "$FALLBACK_CARD/Roms" "$FAKE_BIN"
 printf '%s\\n' "fallback-rom" > "$FALLBACK_CARD/Games/FC/fallback.rom"
 sh "$HELPER" scan "$FALLBACK_CARD" NextUIExfat "$FALLBACK_CARD" || \
