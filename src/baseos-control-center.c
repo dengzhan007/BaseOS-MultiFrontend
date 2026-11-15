@@ -406,12 +406,14 @@ static void render_confirm(void)
     Frontend *e = selected < entry_count ? &entries[selected] : NULL;
     if (e) {
         draw_text(30, 145, confirm_action == CONFIRM_PROFILE ?
-                  "Remove this configuration profile?" : "Delete this frontend package?");
+                  "Remove this configuration profile?" : "Delete this frontend package?",
+                  20, colour(245,248,252));
         draw_line(30, 185, e->label, 19, colour(240,240,240), w - 60);
         draw_line(30, 217, e->package, 15, colour(170,190,205), w - 60);
-        draw_text(30, 270, confirm_action == CONFIRM_PROFILE ?
+        draw_line(30, 270, confirm_action == CONFIRM_PROFILE ?
                   "The shared program and other profiles will remain." :
-                  "All profiles and this program folder will be removed.");
+                  "All profiles and this program folder will be removed.",
+                  15, colour(215,225,235), w - 60);
         draw_text(30, 300, "Games, Saves and private instance data are preserved.",
                   14, colour(100,210,180));
     }
