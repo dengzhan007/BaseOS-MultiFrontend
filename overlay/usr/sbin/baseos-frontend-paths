@@ -18,9 +18,8 @@ valid_id() {
 
 valid_target() {
   case "$1" in
-    Roms|ROMs|roms|Games|Saves|saves|Bios|BIOS|bios|Cheats|cheats|Overlays|overlays|Shaders|shaders|Config|.system|SYSTEM|System|Tools|tools|Emus|emus|spruce|.userdata|userdata)
-      return 0 ;;
-    *) return 1 ;;
+    ''|.|..|/*|*'..'*|*'|'*|*[!A-Za-z0-9._-]*) return 1 ;;
+    *) [ "${#1}" -le 64 ] ;;
   esac
 }
 
@@ -508,7 +507,7 @@ apply_map() {
   ap_system=$(read_map_value "$ap_map" system_target "")
   ap_tools=$(read_map_value "$ap_map" tools_target "")
   ap_emus=$(read_map_value "$ap_map" emus_target "")
-  ap_spruce=$(read_map_value "$ap_map" runtime_target "")
+  ap_runtime=$(read_map_value "$ap_map" runtime_target "")
   ap_cores=$(read_map_value "$ap_map" cores_target "")
   ap_userdata=$(read_map_value "$ap_map" userdata_target .userdata)
   ap_config=$(read_map_value "$ap_map" config_target "")
@@ -544,7 +543,7 @@ apply_map() {
     rm -f "$ap_state"
     return 1
   }
-  for ap_name in "$ap_games" "$ap_saves" "$ap_bios" "$ap_cheats" "$ap_overlays" "$ap_shaders" "$ap_system" "$ap_tools" "$ap_emus" "$ap_spruce" "$ap_userdata" "$ap_config"; do
+  for ap_name in "$ap_games" "$ap_saves" "$ap_bios" "$ap_cheats" "$ap_overlays" "$ap_shaders" "$ap_system" "$ap_tools" "$ap_emus" "$ap_runtime" "$ap_userdata" "$ap_config"; do
     [ -z "$ap_name" ] || valid_target "$ap_name" || {
       echo "invalid frontend path-map target: $ap_name" >&2
       rm -f "$ap_state"
@@ -568,7 +567,7 @@ apply_map() {
   [ -z "$ap_system" ] || add_alias "$ap_root" "$ap_system" "$ap_program/$ap_system" "$ap_state"
   [ -z "$ap_tools" ] || add_alias "$ap_root" "$ap_tools" "$ap_program/$ap_tools" "$ap_state"
   [ -z "$ap_emus" ] || add_alias "$ap_root" "$ap_emus" "$ap_program/$ap_emus" "$ap_state"
-  [ -z "$ap_spruce" ] || add_alias "$ap_root" "$ap_spruce" "$ap_program/$ap_spruce" "$ap_state"
+  [ -z "$ap_runtime" ] || add_alias "$ap_root" "$ap_runtime" "$ap_program/$ap_runtime" "$ap_state"
   if [ -n "$ap_config" ] && [ -n "$ap_instance" ]; then
     ap_frontend_config=$ap_instance/frontend-config
     # Migrate a pre-multi-frontend Config directory into the first selected
