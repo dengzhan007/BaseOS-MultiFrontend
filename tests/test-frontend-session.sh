@@ -121,6 +121,14 @@ check_handoff() {
 
 # A generic package-root script is found without any frontend name.
 reset_card
+cat > /mnt/sdcard/launch.sh <<'EOF'
+#!/bin/sh
+[ "$PWD" = /mnt/sdcard ] || exit 81
+echo script > /tmp/frontend.log
+echo frontend-stdout
+echo frontend-stderr >&2
+if [ -f /tmp/frontend-exit ]; then exit "$(cat /tmp/frontend-exit)"; fi
+EOF
 : > "$BOOT_LOG"
 run_session
 [ "$status" -eq 0 ] || { cat /tmp/session-console.log >&2; fail "generic script launch returned $status"; }
