@@ -119,7 +119,7 @@ static int key_is_down(int key)
 static int boot_chord_held(void)
 {
     if (!open_inputs()) return 0;
-    int held = key_is_down(BTN_TL) && key_is_down(BTN_TR);
+    int held = key_is_down(BTN_TL) || key_is_down(BTN_TR);
     close_inputs();
     return held;
 }
@@ -354,7 +354,7 @@ static void render_selector(void)
 {
     int w = (int)fb_var.xres;
     int row_h = 50;
-    draw_header("Frontend selector", "L1 + R1 at boot");
+    draw_header("Frontend selector", "Hold L1 or R1 at boot");
     draw_text(28, 105, "Installed frontend profiles", 17, colour(157, 177, 194));
     char count[80];
     snprintf(count, sizeof(count), "%d profile(s)", entry_count);
