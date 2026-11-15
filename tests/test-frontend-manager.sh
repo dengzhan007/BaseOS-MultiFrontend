@@ -209,7 +209,7 @@ mkdir -p "$SIBLING_FRONTEND"
 printf 'sibling frontend must survive\n' > "$SIBLING_FRONTEND/marker"
 LEGACY_ROOT=$TF1/Frontends/NextUI
 LEGACY_ADAPTER=$LEGACY_ROOT/.baseos/frontends/nextui
-mkdir -p "$LEGACY_ADAPTER" "$LEGACY_ROOT/.system/rg353ps" "$LEGACY_ROOT/Tools/h700"
+mkdir -p "$LEGACY_ADAPTER" "$LEGACY_ROOT/.system/h700" "$LEGACY_ROOT/Tools/h700"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$LEGACY_ADAPTER/launch.sh"
 cat > "$LEGACY_ADAPTER/manifest.conf" <<'EOF'
 adapter_api=1
@@ -217,7 +217,7 @@ priority=120
 volume_owner=system
 power_owner=system
 EOF
-printf 'nextui payload\n' > "$LEGACY_ROOT/.system/rg353ps/nextui.elf"
+printf 'nextui payload\n' > "$LEGACY_ROOT/.system/h700/nextui.elf"
 printf 'shared tool\n' > "$LEGACY_ROOT/Tools/h700/tool"
 run_manager catalog
 grep -F -q 'nextui|nextui|nextui|legacy|' "$CATALOG" || fail "legacy adapter under wrapper root was missing from the selector catalog"
@@ -229,7 +229,7 @@ grep -F -q 'frontend_id=nextui' "$CONFIG" || fail "plain legacy adapter ID was n
 run_manager disable-legacy nextui
 [ -f "$LEGACY_ROOT/.baseos/frontends-disabled/nextui" ] || fail "legacy adapter disable marker was not created"
 [ -f "$LEGACY_ADAPTER/launch.sh" ] || fail "disabling legacy adapter deleted its original files"
-[ -f "$LEGACY_ROOT/.system/rg353ps/nextui.elf" ] || fail "disabling legacy adapter touched shared frontend payload"
+[ -f "$LEGACY_ROOT/.system/h700/nextui.elf" ] || fail "disabling legacy adapter touched shared frontend payload"
 run_manager catalog
 grep -F -q 'nextui|nextui|nextui|legacy|' "$CATALOG" || fail "disabled legacy adapter disappeared from selector catalog"
 grep -F -q '|legacy-adapter|disabled' "$CATALOG" || fail "legacy adapter disabled status was not exposed"
@@ -246,7 +246,7 @@ printf '%s\n' 'paths_api=1' 'frontend_id=nextui' > "$TF1/.baseos/frontend-paths/
 run_manager delete-legacy-adapter nextui
 [ ! -e "$TF1/.baseos/frontend-paths/nextui.conf" ] || fail "legacy frontend deletion left its BaseOS path map"
 [ ! -e "$LEGACY_ROOT" ] || fail "confirmed legacy frontend deletion left its bundle directory"
-[ ! -e "$LEGACY_ROOT/.system/rg353ps/nextui.elf" ] || fail "legacy frontend deletion left bundled .system payload"
+[ ! -e "$LEGACY_ROOT/.system/h700/nextui.elf" ] || fail "legacy frontend deletion left bundled .system payload"
 [ ! -e "$LEGACY_ROOT/Tools/h700/tool" ] || fail "legacy frontend deletion left bundled Tools payload"
 [ -d "$TF1/Frontends" ] || fail "legacy frontend deletion removed the Frontends container"
 [ -f "$SIBLING_FRONTEND/marker" ] || fail "legacy frontend deletion removed a separate frontend directory"
