@@ -94,17 +94,12 @@ baseos_frontend_load_package() {
     baseos_frontend_read_value "$bfl_manifest" compat_entrypoint ""
     BASEOS_COMPAT_ENTRYPOINT=$BASEOS_VALUE
     case "$BASEOS_COMPAT_ENTRYPOINT" in
-      launch.sh|start.sh|run.sh|frontend.sh|.tmp_update/updater|.tmp_update/launch.sh|frontend.elf|*.elf|System/slot|System/frontend|System/launch_frontend.sh|.system/h700/paks/MinUI.pak/launch.sh|spruce/scripts/runtime.sh) ;;
-      *) return 1 ;;
+      ''|/*|*'..'*|*'|'*|*[!A-Za-z0-9._/-]*) return 1 ;;
     esac
-    case "$BASEOS_COMPAT_ENTRYPOINT" in
-      */*) [ "$BASEOS_COMPAT_ENTRYPOINT" = .tmp_update/updater ] ||
-           [ "$BASEOS_COMPAT_ENTRYPOINT" = .tmp_update/launch.sh ] || \
-           [ "$BASEOS_COMPAT_ENTRYPOINT" = System/slot ] || \
-           [ "$BASEOS_COMPAT_ENTRYPOINT" = System/frontend ] || \
-           [ "$BASEOS_COMPAT_ENTRYPOINT" = System/launch_frontend.sh ] || \
-           [ "$BASEOS_COMPAT_ENTRYPOINT" = .system/h700/paks/MinUI.pak/launch.sh ] || \
-           [ "$BASEOS_COMPAT_ENTRYPOINT" = spruce/scripts/runtime.sh ] || return 1 ;;
+    baseos_frontend_read_value "$bfl_manifest" compat_mode ""
+    case "$BASEOS_VALUE" in
+      script-package|script-pak|script-card|script-runtime|binary-card|binary-package) ;;
+      *) return 1 ;;
     esac
     [ -f "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ] &&
       [ ! -L "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ] || return 1
