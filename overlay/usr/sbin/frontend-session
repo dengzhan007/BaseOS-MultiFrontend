@@ -11,6 +11,10 @@ if [ -r /etc/baseos-release ]; then
 fi
 
 SD=/mnt/sdcard
+# rcS applies TF1's settings before init starts and keeps the non-secret values
+# in RAM for this session, even when TF2 is the mounted frontend card.
+BASEOS_FRONTEND_CONFIG=${BASEOS_FRONTEND_CONFIG:-/run/baseos.conf}
+export BASEOS_FRONTEND_CONFIG
 . /usr/share/baseos/boot-log.sh
 select_boot_log
 INSTALL_FAILED=0
@@ -160,12 +164,12 @@ fi
 # original frontend program directories are treated as read-only input.
 FRONTEND_CATALOG_SELECTED=no
 FRONTEND_PREFERENCE=auto
-if [ -r "$SD/baseos.conf" ]; then
+if [ -r "$BASEOS_FRONTEND_CONFIG" ]; then
 	while IFS= read -r frontend_config_line || [ -n "$frontend_config_line" ]; do
 		case "$frontend_config_line" in
 			frontend_id=*) FRONTEND_PREFERENCE=${frontend_config_line#frontend_id=} ;;
 		esac
-	done < "$SD/baseos.conf"
+	done < "$BASEOS_FRONTEND_CONFIG"
 fi
 [ -n "$FRONTEND_PREFERENCE" ] || FRONTEND_PREFERENCE=auto
 
