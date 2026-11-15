@@ -54,7 +54,7 @@ write_if_changed() {
 }
 
 is_elf_file() {
-  elf_magic=$(od -An -N4 -tx1 "$1" 2>/dev/null | tr -d ' \\n')
+  elf_magic=$(od -An -N4 -tx1 "$1" 2>/dev/null | tr -d ' \n')
   [ "$elf_magic" = 7f454c46 ]
 }
 
@@ -251,6 +251,7 @@ scan_root() {
     sr_program_quote=$(shell_quote "$sr_dir")
     sr_entry_quote=$(shell_quote "$COMPAT_ENTRY")
     sr_mode_quote=$(shell_quote "$COMPAT_MODE")
+    sr_tool_quote=$(shell_quote "${BASEOS_COMPAT_TOOL:-/usr/sbin/baseos-frontend-compat}")
     sr_stat=$(stat -c '%Y:%s' "$sr_dir/$COMPAT_ENTRY" 2>/dev/null || echo unknown)
     {
       printf '%s\n' 'package_api=1'
@@ -267,9 +268,11 @@ scan_root() {
       printf 'BASEOS_COMPAT_PROGRAM_DIR=%s\n' "$sr_program_quote"
       printf 'BASEOS_COMPAT_ENTRYPOINT=%s\n' "$sr_entry_quote"
       printf 'BASEOS_COMPAT_MODE=%s\n' "$sr_mode_quote"
+      printf 'BASEOS_COMPAT_TOOL=%s\n' "$sr_tool_quote"
       printf '%s\n' 'export BASEOS_COMPAT_PROGRAM_DIR'
+      printf '%s\n' 'export BASEOS_COMPAT_TOOL'
       printf 'cd "$BASEOS_COMPAT_PROGRAM_DIR"\n'
-      printf '%s\\n' 'exec /usr/sbin/baseos-frontend-compat launch "$BASEOS_COMPAT_PROGRAM_DIR" "$BASEOS_COMPAT_ENTRYPOINT" "$BASEOS_COMPAT_MODE"'
+      printf '%s\n' 'exec "$BASEOS_COMPAT_TOOL" launch "$BASEOS_COMPAT_PROGRAM_DIR" "$BASEOS_COMPAT_ENTRYPOINT" "$BASEOS_COMPAT_MODE"'
     } | write_if_changed "$sr_sidecar/launch.sh"
     {
       printf '%s\n' 'profile_api=1'
