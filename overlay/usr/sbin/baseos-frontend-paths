@@ -543,8 +543,15 @@ apply_map() {
   [ -z "$ap_emus" ] || add_alias "$ap_root" "$ap_emus" "$ap_program/$ap_emus" "$ap_state"
   [ -z "$ap_spruce" ] || add_alias "$ap_root" "$ap_spruce" "$ap_program/$ap_spruce" "$ap_state"
   if [ -n "$ap_config" ] && [ -n "$ap_instance" ]; then
-    mkdir -p "$ap_instance/config" || return 1
-    add_alias "$ap_root" "$ap_config" "$ap_instance/frontend-config" "$ap_state"
+    ap_frontend_config=$ap_instance/frontend-config
+    # Migrate a pre-multi-frontend Slot Config directory into the first
+    # selected profile once. Later profiles get a fresh private Config tree.
+    if [ ! -e "$ap_frontend_config" ] && [ -d "$ap_root/$ap_config" ] &&
+       [ ! -L "$ap_root/$ap_config" ]; then
+      mv "$ap_root/$ap_config" "$ap_frontend_config" || return 1
+    fi
+    mkdir -p "$ap_frontend_config" || return 1
+    add_alias "$ap_root" "$ap_config" "$ap_frontend_config" "$ap_state"
   fi
   [ -z "$ap_userdata" ] || [ -z "$4" ] || add_alias "$ap_root" "$ap_userdata" "$4" "$ap_state"
   if [ -n "$ap_cores" ]; then
