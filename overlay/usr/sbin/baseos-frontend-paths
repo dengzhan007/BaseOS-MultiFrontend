@@ -26,7 +26,7 @@ valid_target() {
 
 valid_core_target() {
   case "$1" in
-    .system/h700/cores|.system/h700/cores|.system/cores|SYSTEM/h700/cores|SYSTEM/h700/cores|SYSTEM/cores|System/h700/cores|System/h700/cores|System/cores)
+    .system/h700/cores|.system/cores|SYSTEM/h700/cores|SYSTEM/cores|System/h700/cores|System/cores)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -238,12 +238,10 @@ scan_map() {
   # shared core pack at runtime.
   if [ -n "$sm_system" ] && [ -d "$sm_program/$sm_system/h700" ]; then
     sm_cores=$sm_system/h700/cores
-  elif [ -n "$sm_system" ] && [ -d "$sm_program/$sm_system/h700" ]; then
-    sm_cores=$sm_system/h700/cores
   elif [ -n "$sm_system" ] && [ -d "$sm_program/$sm_system/cores" ]; then
     sm_cores=$sm_system/cores
   elif [ -n "$sm_system" ]; then
-    # RG353PS is this BaseOS target. Declare the directory even when a
+    # H700 is this BaseOS target. Declare the directory even when a
     # frontend does not bundle its own cores; BaseOS can provide the shared set.
     sm_cores=$sm_system/h700/cores
   fi
