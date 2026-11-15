@@ -13,10 +13,10 @@ value=$2
 case "$value" in
   auto) ;;
   ''|.*|-*|_*|*[!A-Za-z0-9._-]*|*/*|*'|'*) echo "invalid frontend_id" >&2; exit 2 ;;
-  *) [ "\${#value}" -le 48 ] || { echo "invalid frontend_id" >&2; exit 2; } ;;
+  *) [ "${#value}" -le 48 ] || { echo "invalid frontend_id" >&2; exit 2; } ;;
 esac
 
-RUN=\${BASEOS_RUN_ROOT:-/run}
+RUN=${BASEOS_RUN_ROOT:-/run}
 TARGET_FILE=$RUN/baseos-config-target
 [ -r "$TARGET_FILE" ] || { echo "no persistent BaseOS configuration source" >&2; exit 1; }
 IFS= read -r target < "$TARGET_FILE" || target=
@@ -26,8 +26,8 @@ case "$target" in
     exit 1
     ;;
   /dev/mmcblk0p7)
-    MOUNT=\${BASEOS_CONFIG_MOUNT:-/mnt/system}
-    DEVICE=\${BASEOS_CONFIG_DEVICE:-/dev/mmcblk0p7}
+    MOUNT=${BASEOS_CONFIG_MOUNT:-/mnt/system}
+    DEVICE=${BASEOS_CONFIG_DEVICE:-/dev/mmcblk0p7}
     mkdir -p "$MOUNT"
     owned_mount=no
     remounted_ro=no
@@ -60,7 +60,7 @@ case "$target" in
 esac
 
 [ ! -L "$path" ] || { echo "refusing symlinked baseos.conf: $path" >&2; exit 1; }
-dir=\${path%/*}
+dir=${path%/*}
 [ "$dir" != "$path" ] || dir=.
 mkdir -p "$dir"
 tmp=$path.baseos-tmp.$$
