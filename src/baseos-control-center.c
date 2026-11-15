@@ -85,9 +85,11 @@ static int open_inputs(void)
         if (fd < 0) continue;
         memset(keybits, 0, sizeof(keybits));
         if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) < 0 ||
-            !(bit_set(keybits, BTN_SOUTH) && bit_set(keybits, BTN_EAST) &&
-              (bit_set(keybits, KEY_UP) || bit_set(keybits, BTN_DPAD_UP)) &&
-              (bit_set(keybits, KEY_DOWN) || bit_set(keybits, BTN_DPAD_DOWN)))) {
+            !(bit_set(keybits, BTN_SOUTH) || bit_set(keybits, BTN_EAST) ||
+              bit_set(keybits, BTN_START) || bit_set(keybits, BTN_SELECT) ||
+              bit_set(keybits, BTN_TL) || bit_set(keybits, BTN_TR) ||
+              bit_set(keybits, KEY_UP) || bit_set(keybits, KEY_DOWN) ||
+              bit_set(keybits, BTN_DPAD_UP) || bit_set(keybits, BTN_DPAD_DOWN))) {
             close(fd);
             continue;
         }
@@ -116,7 +118,7 @@ static int key_is_down(int key)
     return 0;
 }
 
-static int boot_chord_held(void)
+static int boot_selector_held(void)
 {
     if (!open_inputs()) return 0;
     int held = key_is_down(BTN_TL) || key_is_down(BTN_TR);
