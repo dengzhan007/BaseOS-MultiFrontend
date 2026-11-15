@@ -156,32 +156,215 @@ if mountpoint -q "$SD" 2>/dev/null; then
 	fi
 fi
 
-LAUNCH=
-FRONTEND=
-LAUNCH_TYPE=script
-# Select Generic, Slot, NextUI, then spruceOS after any pending install/update.
-# Prefer the generic binary over its shell launcher.
-if [ -f "$SD/System/frontend" ]; then
-	LAUNCH="$SD/System/frontend"
-	FRONTEND=generic
-	LAUNCH_TYPE=binary
-elif [ -f "$SD/System/launch_frontend.sh" ]; then
-	LAUNCH="$SD/System/launch_frontend.sh"
-	FRONTEND=generic
-elif [ -f "$SD/System/slot" ]; then
-	LAUNCH="$SD/System/slot"
-	FRONTEND=slot
-	LAUNCH_TYPE=binary
-elif [ -f "$SD/.system/h700/paks/MinUI.pak/launch.sh" ]; then
-	LAUNCH="$SD/.system/h700/paks/MinUI.pak/launch.sh"
-	FRONTEND=nextui
-elif [ -f /mnt/SDCARD/spruce/scripts/runtime.sh ]; then
-	# rcS aliases /mnt/SDCARD to the selected card. Spruce uses that path
-	# for its runtime and helpers; invoke the script without needing chmod.
-	LAUNCH=/mnt/SDCARD/spruce/scripts/runtime.sh
-	FRONTEND=spruce
+# BaseOS-owned multi-frontend catalog. Metadata lives below .baseos;
+# original frontend program directories are treated as read-only input.
+FRONTEND_CATALOG_SELECTED=no
+FRONTEND_PREFERENCE=auto
+if [ -r "$SD/baseos.conf" ]; then
+	while IFS= read -r frontend_config_line || [ -n "$frontend_config_line" ]; do
+		case "$frontend_config_line" in
+			frontend_id=*) FRONTEND_PREFERENCE=${frontend_config_line#frontend_id=} ;;
+		esac
+	done < "$SD/baseos.conf"
 fi
-if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
+[ -n "$FRONTEND_PREFERENCE" ] || FRONTEND_PREFERENCE=auto
+
+# Either L1 or R1 opens the selector. MENU stays reserved for USB storage.
+if [ ! -e /run/baseos-frontend-selector-boot-checked ]; then
+	: > /run/baseos-frontend-selector-boot-checked
+	if [ -x /usr/sbin/baseos-control-center ] &&
+	   /usr/sbin/baseos-control-center --boot-held; then
+		log "boot selector requested by L1/R1"
+		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
+			/usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1 || :
+		rm -f /run/baseos-frontend-selection
+		/usr/sbin/baseos-control-center --selector >/dev/null 2>&1 || \
+			log "frontend selector UI returned an error"
+		if [ -s /run/baseos-frontend-selection ]; then
+			read -r FRONTEND_PREFERENCE < /run/baseos-frontend-selection || FRONTEND_PREFERENCE=auto
+			rm -f /run/baseos-frontend-selection
+			log "one-time frontend selection: $FRONTEND_PREFERENCE"
+		else
+			log "frontend selector closed without changing the one-boot selection"
+		fi
+	fi
+fi
+
+# Compatibility wrappers are BaseOS sidecars; no frontend files are rewritten.
+if [ -x /usr/sbin/baseos-frontend-manager ] &&
+   BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
+     /usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1; then
+	FRONTEND_CATALOG=/run/baseos-frontend-catalog
+	if [ -s "$FRONTEND_CATALOG" ]; then
+		FRONTEND_BEST_PRIORITY=-1
+		FRONTEND_BEST_LINE=
+		while IFS='|' read -r candidate_id candidate_name candidate_package candidate_profile \
+			candidate_root candidate_dir candidate_config candidate_priority candidate_kind candidate_status; do
+			[ -n "$candidate_id" ] || continue
+			[ "$candidate_status" = enabled ] || continue
+			if [ "$FRONTEND_PREFERENCE" = auto ]; then
+				if [ "$candidate_priority" -gt "$FRONTEND_BEST_PRIORITY" ] 2>/dev/null; then
+					FRONTEND_BEST_PRIORITY=$candidate_priority
+					FRONTEND_BEST_LINE="$candidate_id|$candidate_name|$candidate_package|$candidate_profile|$candidate_root|$candidate_dir|$candidate_config|$candidate_priority|$candidate_kind|$candidate_status"
+				fi
+			elif [ "$candidate_id" = "$FRONTEND_PREFERENCE" ]; then
+				FRONTEND_BEST_LINE="$candidate_id|$candidate_name|$candidate_package|$candidate_profile|$candidate_root|$candidate_dir|$candidate_config|$candidate_priority|$candidate_kind|$candidate_status"
+				break
+			fi
+		done < "$FRONTEND_CATALOG"
+
+		if [ -z "$FRONTEND_BEST_LINE" ] && [ "$FRONTEND_PREFERENCE" != auto ]; then
+			log "configured frontend_id '$FRONTEND_PREFERENCE' unavailable; falling back to automatic discovery"
+			FRONTEND_PREFERENCE=auto
+			FRONTEND_BEST_PRIORITY=-1
+			while IFS='|' read -r candidate_id candidate_name candidate_package candidate_profile \
+				candidate_root candidate_dir candidate_config candidate_priority candidate_kind candidate_status; do
+				[ -n "$candidate_id" ] && [ "$candidate_status" = enabled ] || continue
+				if [ "$candidate_priority" -gt "$FRONTEND_BEST_PRIORITY" ] 2>/dev/null; then
+					FRONTEND_BEST_PRIORITY=$candidate_priority
+					FRONTEND_BEST_LINE="$candidate_id|$candidate_name|$candidate_package|$candidate_profile|$candidate_root|$candidate_dir|$candidate_config|$candidate_priority|$candidate_kind|$candidate_status"
+				fi
+			done < "$FRONTEND_CATALOG"
+		fi
+
+		if [ -n "$FRONTEND_BEST_LINE" ]; then
+			IFS='|' read -r SELECTED FRONTEND_NAME FRONTEND_PACKAGE_ID FRONTEND_PROFILE_ID \
+				FRONTEND_CATALOG_ROOT FRONTEND_PACKAGE_DIR FRONTEND_PROFILE_DEFAULTS \
+				FRONTEND_PRIORITY FRONTEND_CATALOG_KIND FRONTEND_CATALOG_STATUS <<EOF
+$FRONTEND_BEST_LINE
+EOF
+			LAUNCH="$FRONTEND_PACKAGE_DIR/launch.sh"
+			FRONTEND=baseos
+			LAUNCH_TYPE=script
+			FRONTEND_CATALOG_SELECTED=yes
+			FRONTEND_PROGRAM_ROOT=$SD
+			FRONTEND_PATHMAP_ID=$SELECTED
+			FRONTEND_PACKAGE_MODE=no
+			BASEOS_COMPAT_PROGRAM_DIR=
+
+			. /usr/sbin/baseos-frontend-discovery
+			case "$FRONTEND_CATALOG_KIND" in
+				managed|compat)
+					if baseos_frontend_load_package "$FRONTEND_CATALOG_ROOT" \
+						"$FRONTEND_PACKAGE_DIR" "$FRONTEND_PROFILE_DEFAULTS"; then
+						FRONTEND_PACKAGE_MODE=yes
+						FRONTEND_PACKAGE_ID=$BASEOS_PACKAGE_ID
+						FRONTEND_PROFILE_ID=$BASEOS_PROFILE_ID
+						FRONTEND_PATHMAP_ID=$FRONTEND_PACKAGE_ID
+						if [ "$FRONTEND_CATALOG_KIND" = compat ]; then
+							FRONTEND_PROGRAM_ROOT=$BASEOS_COMPAT_PROGRAM_DIR
+						else
+							FRONTEND_PROGRAM_ROOT=$FRONTEND_PACKAGE_DIR
+							[ ! -d "$FRONTEND_PROGRAM_ROOT/payload" ] || \
+								FRONTEND_PROGRAM_ROOT=$FRONTEND_PROGRAM_ROOT/payload
+						fi
+					else
+						log "catalog package metadata changed during discovery; ignoring the catalog entry"
+						FRONTEND_CATALOG_SELECTED=no
+						LAUNCH=
+					fi
+					;;
+				legacy-adapter)
+					case "$FRONTEND_PACKAGE_DIR" in
+						"$SD"/Frontends/*/.baseos/frontends/*)
+							FRONTEND_PROGRAM_ROOT=${FRONTEND_PACKAGE_DIR%%/.baseos/frontends/*}
+							;;
+						"$SD"/.baseos/frontends/*|"$SD"/baseos/frontends/*)
+							FRONTEND_PROGRAM_ROOT=$SD
+							;;
+						*) FRONTEND_PROGRAM_ROOT=$SD ;;
+					esac
+					FRONTEND_PATHMAP_ID=$SELECTED
+					;;
+				*)
+					log "unsupported frontend catalog kind '$FRONTEND_CATALOG_KIND'"
+					FRONTEND_CATALOG_SELECTED=no
+					LAUNCH=
+					;;
+			esac
+
+			if [ "$FRONTEND_CATALOG_SELECTED" = yes ]; then
+				BASEOS_FRONTEND_ID=$SELECTED
+				BASEOS_FRONTEND_ROOT=$SD
+				BASEOS_CARD_ROOT=$SD
+				BASEOS_FRONTEND_PROGRAM_ROOT=$FRONTEND_PROGRAM_ROOT
+				BASEOS_FRONTEND_PATHMAP_ID=$FRONTEND_PATHMAP_ID
+				BASEOS_INSTANCE_ID=$SELECTED
+				BASEOS_INSTANCE_DIR=$SD/.baseos/instances/$SELECTED
+				BASEOS_DATA_DIR=$BASEOS_INSTANCE_DIR/data
+				BASEOS_USERDATA_DIR=$BASEOS_INSTANCE_DIR/userdata
+				BASEOS_PROFILE_CONFIG=$BASEOS_INSTANCE_DIR/config/profile.conf
+				BASEOS_GAMES_DIR=$SD/Games
+				BASEOS_SAVES_DIR=$SD/Saves
+				BASEOS_BIOS_DIR=$SD/Bios
+				BASEOS_CHEATS_DIR=$SD/Cheats
+				BASEOS_OVERLAYS_DIR=$SD/Overlays
+				BASEOS_SHADERS_DIR=$SD/Shaders
+				mkdir -p "$SD/Games" "$SD/Saves" "$SD/Bios" "$SD/Cheats" \
+					"$SD/Overlays" "$SD/Shaders" \
+					"$BASEOS_INSTANCE_DIR/config" "$BASEOS_INSTANCE_DIR/cache" \
+					"$BASEOS_INSTANCE_DIR/states" "$BASEOS_INSTANCE_DIR/database" \
+					"$BASEOS_INSTANCE_DIR/assets" "$BASEOS_INSTANCE_DIR/logs" \
+					"$BASEOS_DATA_DIR" "$BASEOS_USERDATA_DIR" 2>/dev/null || :
+				if [ -n "$FRONTEND_PROFILE_DEFAULTS" ] && [ -f "$FRONTEND_PROFILE_DEFAULTS" ] &&
+				   [ ! -s "$BASEOS_PROFILE_CONFIG" ]; then
+					cp "$FRONTEND_PROFILE_DEFAULTS" "$BASEOS_PROFILE_CONFIG" 2>/dev/null || :
+				fi
+				BASEOS_PACKAGE_DIR=$FRONTEND_PACKAGE_DIR
+				BASEOS_PROFILE_DEFAULTS=$FRONTEND_PROFILE_DEFAULTS
+				BASEOS_LAUNCHER=$LAUNCH
+				export BASEOS_FRONTEND_ID BASEOS_FRONTEND_ROOT BASEOS_CARD_ROOT
+				export BASEOS_FRONTEND_PROGRAM_ROOT BASEOS_FRONTEND_PATHMAP_ID
+				export BASEOS_INSTANCE_ID BASEOS_INSTANCE_DIR BASEOS_DATA_DIR BASEOS_USERDATA_DIR
+				export BASEOS_PACKAGE_ID BASEOS_PROFILE_ID BASEOS_PACKAGE_DIR
+				export BASEOS_PROFILE_CONFIG BASEOS_PROFILE_DEFAULTS BASEOS_COMPAT_PROGRAM_DIR
+				export BASEOS_GAMES_DIR BASEOS_SAVES_DIR BASEOS_BIOS_DIR BASEOS_CHEATS_DIR
+				export BASEOS_OVERLAYS_DIR BASEOS_SHADERS_DIR BASEOS_LAUNCHER
+
+				if [ -x /usr/sbin/baseos-frontend-paths ] &&
+				   /usr/sbin/baseos-frontend-paths scan "$SD" "$FRONTEND_PATHMAP_ID" \
+						"$FRONTEND_PROGRAM_ROOT" >/dev/null 2>&1; then
+					BASEOS_FRONTEND_PATHMAP=$SD/.baseos/frontend-paths/$FRONTEND_PATHMAP_ID.conf
+					export BASEOS_FRONTEND_PATHMAP
+					if /usr/sbin/baseos-frontend-paths apply "$SD" "$FRONTEND_PROGRAM_ROOT" \
+						"$BASEOS_FRONTEND_PATHMAP" "$BASEOS_USERDATA_DIR" >/dev/null 2>&1; then
+						log "shared Games/Saves and per-profile userdata paths applied for $SELECTED"
+					else
+						log "WARNING: frontend path map could not be applied for $SELECTED"
+					fi
+				fi
+				log "selected BaseOS frontend profile $SELECTED ($FRONTEND_CATALOG_KIND, priority=$FRONTEND_PRIORITY)"
+			fi
+		fi
+	fi
+fi
+
+LAUNCH=${LAUNCH:-}
+FRONTEND=${FRONTEND:-}
+LAUNCH_TYPE=${LAUNCH_TYPE:-script}
+if [ -z "$LAUNCH" ]; then
+	# Keep direct H700 entry points working for cards without a BaseOS manifest.
+	if [ -f "$SD/System/frontend" ]; then
+		LAUNCH="$SD/System/frontend"
+		FRONTEND=generic
+		LAUNCH_TYPE=binary
+	elif [ -f "$SD/System/launch_frontend.sh" ]; then
+		LAUNCH="$SD/System/launch_frontend.sh"
+		FRONTEND=generic
+	elif [ -f "$SD/System/slot" ]; then
+		LAUNCH="$SD/System/slot"
+		FRONTEND=slot
+		LAUNCH_TYPE=binary
+	elif [ -f "$SD/.system/h700/paks/MinUI.pak/launch.sh" ]; then
+		LAUNCH="$SD/.system/h700/paks/MinUI.pak/launch.sh"
+		FRONTEND=nextui
+	elif [ -f "$SD/spruce/scripts/runtime.sh" ]; then
+		LAUNCH="$SD/spruce/scripts/runtime.sh"
+		FRONTEND=spruce
+	fi
+fi
+
+f [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 	if [ "$FRONTEND" = slot ]; then
 		export SLOT_ROOT="$SD"
 	fi
