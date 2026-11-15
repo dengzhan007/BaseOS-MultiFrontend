@@ -20,7 +20,7 @@ TOOLS="$HERE/work/tools"
 
 [ -f "$WORK/source.json" ] || { echo "missing $WORK/source.json (run prepare-stock.sh $TARGET IMAGE)"; exit 1; }
 [ -f "$WORK/stock-harvest.tar" ] || { echo "missing $WORK/stock-harvest.tar (run prepare-stock.sh $TARGET IMAGE)"; exit 1; }
-for tool in busybox dropbearmulti curl fbsplash gptgrow gptslot sftp-server adbd axp-off charger-wait avahi-daemon boot-clock native-health baseos-regs e2fsck; do
+for tool in busybox dropbearmulti curl fbsplash baseos-control-center gptgrow gptslot sftp-server adbd axp-off charger-wait avahi-daemon boot-clock native-health baseos-regs e2fsck; do
   [ -x "$TOOLS/$tool" ] || { echo "missing $TOOLS/$tool (run build-tools.sh)"; exit 1; }
 done
 BASEOS_VERSION="$(tr -d ' \n' < "$HERE/VERSION")"
