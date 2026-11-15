@@ -117,18 +117,11 @@ export COMPAT_TEST_RESULT
 [ "$(sed -n '2p' "$COMPAT_TEST_RESULT")" = "$TF1/Frontends/NextUI" ] || fail "compat program directory was not exported"
 
 run_manager catalog
-grep -F -q 'NextUI--default|NextUI|' "$CATALOG" || {
-  echo "--- selector catalog ---" >&2
-  cat "$CATALOG" >&2 || :
-  echo "--- compatibility manifest ---" >&2
-  cat "$TF1/.baseos/compat/NextUI/baseos-frontend.conf" >&2 || :
-  echo "--- generated compatibility launcher ---" >&2
-  cat "$TF1/.baseos/compat/NextUI/launch.sh" >&2 || :
-  echo "--- sidecar profile ---" >&2
-  cat "$TF1/.baseos/compat/NextUI/profiles/default.conf" >&2 || :
-  fail "legacy folder was not added to selector catalog"
-}
+grep -F -q 'NextUI--default|NextUI|' "$CATALOG" || fail "legacy folder was not added to selector catalog"
 grep -F -q 'NextUI-copy--default|NextUI-copy|' "$CATALOG" || fail "renamed full-copy folder was not discovered independently"
+# IDs that are suffixes of another valid ID must not be dropped as duplicates.
+grep -F -q 'H700NextUI--default|H700NextUI|' "$CATALOG" || fail "H700 NextUI profile missing"
+grep -F -q 'NextUI--default|NextUI|' "$CATALOG" || fail "NextUI profile was hidden by prefix-like H700NextUI ID"
 grep -F -q "Next-UI--default|Next'UI|" "$CATALOG" || fail "folder names containing quotes were not safely wrapped"
 unicode_id="frontend-$(printf '%s' '街机' | cksum | awk '{print $1}')"
 grep -F -q "$unicode_id--default|街机|" "$CATALOG" || fail "all-Unicode folder name was not assigned a stable ID"
