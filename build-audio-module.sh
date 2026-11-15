@@ -11,9 +11,18 @@ fi
 python3 "$HERE/tools/audio_module.py" prepare "$TARGET"
 CACHE="$HERE/work/audio-build"
 mkdir -p "$CACHE"
+# build-tools.sh already produced a static AArch64 curl and its pinned CA
+# bundle. The vendor toolchain image does not guarantee a curl installation;
+# mount the known-good target-architecture downloader instead of depending on
+# an incidental package in that image.
+for file in "$HERE/work/tools/curl" "$HERE/work/tools/ca-certificates.crt"; do
+  [ -s "$file" ] || { echo "missing $file (run build-tools.sh first)" >&2; exit 1; }
+done
 # This compiler is the GCC 8.3 H700 toolchain used to validate the vendor ABI.
 docker run --rm --platform linux/arm64 \
   -v "$OUT":/out -v "$CACHE":/cache \
+  -v "$HERE/work/tools/curl":/tools/curl:ro \
+  -v "$HERE/work/tools/ca-certificates.crt":/tools/ca-certificates.crt:ro \
   ghcr.io/loveretro/h700-toolchain@sha256:bf5d8f9f5442cad789aa77176bc059ec823caefa3258bf30780eee681c777119 \
   sh -euc '
   if ! command -v bc >/dev/null; then
@@ -22,7 +31,9 @@ docker run --rm --platform linux/arm64 \
   fi
   ARCHIVE=/cache/linux-4.9.170.tar.xz
   if [ ! -f "$ARCHIVE" ]; then
-    curl -fL https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.170.tar.xz -o "$ARCHIVE.tmp"
+    /tools/curl --fail --location --silent --show-error \
+      --cacert /tools/ca-certificates.crt \
+      https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.170.tar.xz -o "$ARCHIVE.tmp"
     mv "$ARCHIVE.tmp" "$ARCHIVE"
   fi
   echo "33887b40fc8e0b71f423bb7afe112a4ae190378145f4a3f3892c563b7e43131d  $ARCHIVE" | sha256sum -c -
