@@ -254,6 +254,7 @@ scan_map() {
     printf 'cheats_target=%s\n' "$sm_cheats"
     printf 'overlays_target=%s\n' "$sm_overlays"
     printf 'shaders_target=%s\n' "$sm_shaders"
+    printf '%s\n' 'share_bios=yes' 'share_cheats=yes' 'share_overlays=yes' 'share_shaders=yes'
     [ -z "$sm_system" ] || printf 'system_target=%s\n' "$sm_system"
     [ -z "$sm_tools" ] || printf 'tools_target=%s\n' "$sm_tools"
     [ -z "$sm_emus" ] || printf 'emus_target=%s\n' "$sm_emus"
@@ -449,6 +450,32 @@ apply_map() {
 
   mkdir -p "$ap_root/.baseos/frontend-paths" "$ap_root/Games" "$ap_root/Saves" \
     "$ap_root/Bios" "$ap_root/Cheats" "$ap_root/Overlays" "$ap_root/Shaders" || return 1
+  case "$ap_share_bios" in yes|no) ;; *) echo "invalid share_bios value" >&2; return 1 ;; esac
+  case "$ap_share_cheats" in yes|no) ;; *) echo "invalid share_cheats value" >&2; return 1 ;; esac
+  case "$ap_share_overlays" in yes|no) ;; *) echo "invalid share_overlays value" >&2; return 1 ;; esac
+  case "$ap_share_shaders" in yes|no) ;; *) echo "invalid share_shaders value" >&2; return 1 ;; esac
+  ap_bios_source=$ap_root/Bios
+  ap_cheats_source=$ap_root/Cheats
+  ap_overlays_source=$ap_root/Overlays
+  ap_shaders_source=$ap_root/Shaders
+  if [ -n "$4" ]; then
+    if [ "$ap_share_bios" = no ]; then
+      ap_bios_source=$4/assets/bios
+      mkdir -p "$ap_bios_source" || return 1
+    fi
+    if [ "$ap_share_cheats" = no ]; then
+      ap_cheats_source=$4/assets/cheats
+      mkdir -p "$ap_cheats_source" || return 1
+    fi
+    if [ "$ap_share_overlays" = no ]; then
+      ap_overlays_source=$4/assets/overlays
+      mkdir -p "$ap_overlays_source" || return 1
+    fi
+    if [ "$ap_share_shaders" = no ]; then
+      ap_shaders_source=$4/assets/shaders
+      mkdir -p "$ap_shaders_source" || return 1
+    fi
+  fi
   ap_state=$(state_file "$ap_root")
   [ ! -L "$ap_state" ] || { echo "refusing symlinked active path-map state" >&2; return 1; }
   : > "$ap_state"
@@ -459,6 +486,10 @@ apply_map() {
   ap_cheats=$(read_map_value "$ap_map" cheats_target Cheats)
   ap_overlays=$(read_map_value "$ap_map" overlays_target Overlays)
   ap_shaders=$(read_map_value "$ap_map" shaders_target Shaders)
+  ap_share_bios=$(read_map_value "$ap_map" share_bios yes)
+  ap_share_cheats=$(read_map_value "$ap_map" share_cheats yes)
+  ap_share_overlays=$(read_map_value "$ap_map" share_overlays yes)
+  ap_share_shaders=$(read_map_value "$ap_map" share_shaders yes)
   ap_system=$(read_map_value "$ap_map" system_target "")
   ap_tools=$(read_map_value "$ap_map" tools_target "")
   ap_emus=$(read_map_value "$ap_map" emus_target "")
@@ -486,10 +517,10 @@ apply_map() {
     add_alias "$ap_root" roms "$ap_root/Games" "$ap_state"
   fi
   add_alias "$ap_root" "$ap_saves" "$ap_root/Saves" "$ap_state"
-  add_alias "$ap_root" "$ap_bios" "$ap_root/Bios" "$ap_state"
-  add_alias "$ap_root" "$ap_cheats" "$ap_root/Cheats" "$ap_state"
-  add_alias "$ap_root" "$ap_overlays" "$ap_root/Overlays" "$ap_state"
-  add_alias "$ap_root" "$ap_shaders" "$ap_root/Shaders" "$ap_state"
+  add_alias "$ap_root" "$ap_bios" "$ap_bios_source" "$ap_state"
+  add_alias "$ap_root" "$ap_cheats" "$ap_cheats_source" "$ap_state"
+  add_alias "$ap_root" "$ap_overlays" "$ap_overlays_source" "$ap_state"
+  add_alias "$ap_root" "$ap_shaders" "$ap_shaders_source" "$ap_state"
   [ -z "$ap_system" ] || add_alias "$ap_root" "$ap_system" "$ap_program/$ap_system" "$ap_state"
   [ -z "$ap_tools" ] || add_alias "$ap_root" "$ap_tools" "$ap_program/$ap_tools" "$ap_state"
   [ -z "$ap_emus" ] || add_alias "$ap_root" "$ap_emus" "$ap_program/$ap_emus" "$ap_state"
