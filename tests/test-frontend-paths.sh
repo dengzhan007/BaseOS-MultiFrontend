@@ -31,6 +31,10 @@ grep -qx 'games_target=Roms' "$MAP" || fail "legacy Roms target was not detected
 grep -qx 'system_target=.system' "$MAP" || fail "legacy .system target was not detected"
 grep -qx 'tools_target=Tools' "$MAP" || fail "legacy Tools target was not detected"
 grep -qx 'cores_target=.system/h700/cores' "$MAP" || fail "H700 core target was not detected"
+grep -qx 'share_bios=yes' "$MAP" || fail "BIOS is not shared by default"
+grep -qx 'share_cheats=yes' "$MAP" || fail "Cheats are not shared by default"
+grep -qx 'share_overlays=yes' "$MAP" || fail "Overlays are not shared by default"
+grep -qx 'share_shaders=yes' "$MAP" || fail "Shaders are not shared by default"
 
 # The scan is idempotent and must preserve user changes to the BaseOS-owned map.
 printf '%s\n' '# user edit is preserved' >> "$MAP"
@@ -62,6 +66,18 @@ done
 [ -f "$CARD/Games/FC/test.rom" ] || fail "shared Games data was modified"
 [ -f "$MAP" ] || fail "persistent path-map config was removed during cleanup"
 [ -f "$CARD/.baseos/shared/cores/h700/test_libretro.so" ] || fail "frontend core was not imported into the shared library"
+# A per-category "no" moves that category into the selected profile's
+# userdata tree while the other shared roots remain card-level resources.
+sed 's/^share_bios=.*/share_bios=no/' "$MAP" > "$MAP.tmp"
+mv "$MAP.tmp" "$MAP"
+sh "$HELPER" apply "$CARD" "$PROGRAM" "$MAP" "$USERDATA" || fail "per-profile BIOS mapping failed"
+[ -L "$CARD/Bios" ] || fail "per-profile BIOS alias was not created"
+[ "$(readlink "$CARD/Bios")" = "$USERDATA/assets/bios" ] || fail "BIOS alias is not isolated in profile userdata"
+[ -d "$USERDATA/assets/bios" ] || fail "per-profile BIOS directory was not created"
+sh "$HELPER" cleanup "$CARD" || fail "per-profile BIOS mapping cleanup failed"
+[ ! -L "$CARD/Bios" ] || fail "per-profile BIOS alias survived cleanup"
+[ -d "$CARD/Bios" ] || fail "shared BIOS root was not restored after cleanup"
+[ -f "$CARD/Games/FC/test.rom" ] || fail "per-profile asset cleanup affected shared Games"
 
 sed 's/^games_target=.*/games_target=Games/' "$MAP" > "$MAP.tmp"
 mv "$MAP.tmp" "$MAP"
