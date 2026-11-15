@@ -55,6 +55,8 @@ static FT_Face ft_face;
 static int confirm_mode;
 static int confirm_action;
 static int page_diagnostics;
+static int last_tested_key = -1;
+static char status_text[160] = "Ready";
 static volatile sig_atomic_t running = 1;
 
 enum { CONFIRM_NONE, CONFIRM_PROFILE, CONFIRM_PACKAGE };
@@ -317,6 +319,12 @@ static void reload_catalog(void)
     load_catalog();
 }
 
+static void set_status(const char *message)
+{
+    snprintf(status_text, sizeof(status_text), "%s", message ? message : "");
+}
+
+
 static int framebuffer_open(void)
 {
     fb_fd = open("/dev/fb0", O_RDWR);
@@ -349,7 +357,8 @@ static void draw_footer(const char *text)
 {
     int h = (int)fb_var.yres, w = (int)fb_var.xres;
     fill_rect(0, h - 58, w, 58, colour(18, 35, 52));
-    draw_line(24, h - 23, text, 14, colour(203, 215, 224), w - 48);
+    draw_line(24, h - 37, status_text, 12, colour(123, 192, 180), w - 48);
+    draw_line(24, h - 15, text, 12, colour(203, 215, 224), w - 48);
 }
 
 static void render_selector(void)
@@ -424,38 +433,93 @@ static void render_diagnostics(void)
 {
     struct utsname u;
     int w = (int)fb_var.xres;
-    draw_header("System diagnostics", "BaseOS test build");
+    char line[160];
+    draw_header("System diagnostics", "BaseOS / RG34XX");
     draw_text(28, 112, "Device", 14, colour(123,192,180));
-    draw_text(190, 112, "Anbernic RG34XX / Allwinner H700", 16, colour(236,242,247));
+    draw_text(190, 112, "Anbernic RG34XX / Allwinner H700", 15, colour(236,242,247));
     if (uname(&u) == 0) {
         draw_text(28, 151, "Kernel", 14, colour(123,192,180));
-        draw_line(190, 151, u.release, 15, colour(236,242,247), w - 215);
+        draw_line(190, 151, u.release, 14, colour(236,242,247), w - 215);
     }
     draw_text(28, 190, "Frontend catalog", 14, colour(123,192,180));
-    char line[120];
     snprintf(line, sizeof(line), "%d compatible profile(s)", entry_count);
-    draw_text(190, 190, line, 15, colour(236,242,247));
-    draw_text(28, 229, "Storage", 14, colour(123,192,180));
-    FILE *fp = fopen("/proc/mounts", "r");
+    draw_text(190, 190, line, 14, colour(236,242,247));
+
     int mounted = 0;
+    FILE *fp = fopen("/proc/mounts", "r");
     if (fp) {
         char row[512];
         while (fgets(row, sizeof(row), fp))
             if (strstr(row, " /mnt/sdcard ")) { mounted = 1; break; }
         fclose(fp);
     }
+    draw_text(28, 229, "Storage", 14, colour(123,192,180));
     draw_text(190, 229, mounted ? "/mnt/sdcard mounted" : "No user-data card mounted",
-              15, colour(236,242,247));
-    draw_text(28, 278, "USB Mass Storage", 14, colour(123,192,180));
-    draw_text(190, 278, "Hold MENU while powering on", 15, colour(236,242,247));
-    draw_text(28, 327, "Logs", 14, colour(123,192,180));
-    draw_text(190, 327, "/mnt/sdcard/baseos-boot.log", 15, colour(236,242,247));
-    draw_footer("B Back to selector   START Refresh");
+              14, colour(236,242,247));
+
+    fp = fopen("/sys/class/power_supply/axp2202-battery/capacity", "r");
+    char battery[32] = "unknown";
+    if (fp) {
+        if (fgets(battery, sizeof(battery), fp)) battery[strcspn(battery, "\r\n")] = 0;
+        fclose(fp);
+    }
+    draw_text(28, 268, "Battery", 14, colour(123,192,180));
+    snprintf(line, sizeof(line), "%s%%", battery);
+    draw_text(190, 268, line, 14, colour(236,242,247));
+
+    draw_text(28, 307, "USB Mass Storage", 14, colour(123,192,180));
+    draw_text(190, 307, "Hold MENU while powering on", 14, colour(236,242,247));
+    draw_text(28, 346, "Boot log", 14, colour(123,192,180));
+    draw_line(190, 346, "/mnt/sdcard/baseos-boot.log", 14,
+              colour(236,242,247), w - 215);
+    draw_footer("A Button test   B Frontend selector   START Refresh");
+}
+
+static const char *input_key_name(int key)
+{
+    switch (key) {
+    case BTN_TL: return "L1 / TL";
+    case BTN_TR: return "R1 / TR";
+    case BTN_TL2: return "L2";
+    case BTN_TR2: return "R2";
+    case BTN_SOUTH: return "A / South";
+    case BTN_EAST: return "B / East";
+    case BTN_WEST: return "Y / West";
+    case BTN_NORTH: return "X / North";
+    case BTN_START: return "Start";
+    case BTN_SELECT: return "Select";
+    case BTN_MODE: return "Menu / Mode";
+    case KEY_UP: case BTN_DPAD_UP: return "D-pad Up";
+    case KEY_DOWN: case BTN_DPAD_DOWN: return "D-pad Down";
+    case KEY_LEFT: case BTN_DPAD_LEFT: return "D-pad Left";
+    case KEY_RIGHT: case BTN_DPAD_RIGHT: return "D-pad Right";
+    default: return "Other input";
+    }
+}
+
+static void render_button_test(void)
+{
+    int w = (int)fb_var.xres;
+    draw_header("Button test", "Input diagnostics");
+    draw_text(30, 122, "Press each physical control on the RG34XX.", 17,
+              colour(225,235,243));
+    draw_text(30, 174, "Detected input:", 14, colour(123,192,180));
+    draw_text(30, 218, last_tested_key < 0 ? "Waiting for input..." :
+              input_key_name(last_tested_key), 26, colour(245,248,252));
+    char code[80];
+    if (last_tested_key >= 0) {
+        snprintf(code, sizeof(code), "Linux input code: %d", last_tested_key);
+        draw_text(30, 258, code, 14, colour(170,190,205));
+    }
+    draw_text(30, 316, "This test reads evdev events; it does not change mappings.", 13,
+              colour(170,190,205));
+    draw_footer("Press any key to test   A/B Back to diagnostics");
 }
 
 static void render(void)
 {
-    if (page_diagnostics) render_diagnostics();
+    if (page_diagnostics == 1) render_diagnostics();
+    else if (page_diagnostics == 2) render_button_test();
     else if (confirm_mode) render_confirm();
     else render_selector();
 }
@@ -486,15 +550,17 @@ static void handle_selector_key(int key)
     if (confirm_mode) {
         if (key == BTN_EAST) {
             confirm_mode = CONFIRM_NONE;
-            
+            set_status("Cancelled");
             return;
         }
         if (key == BTN_SOUTH && selected < entry_count) {
             Frontend *e = &entries[selected];
             const char *action = confirm_action == CONFIRM_PROFILE ? "uninstall" :
                                  "uninstall-package";
-            if (run_manager(action, e->id) == 0) 
-            else 
+            if (run_manager(action, e->id) == 0)
+                set_status("Removed successfully");
+            else
+                set_status("Removal failed");
             confirm_mode = CONFIRM_NONE;
             reload_catalog();
         }
@@ -509,26 +575,35 @@ static void handle_selector_key(int key)
     } else if (key == BTN_SOUTH) {
         if (selected == entry_count) {
             page_diagnostics = 1;
+            set_status("Diagnostics");
             return;
         }
         if (selected < entry_count && strcmp(entries[selected].status,"disabled") != 0) {
-            if (write_selection(entries[selected].id) == 0) running = 0;
-            else 
+            if (write_selection(entries[selected].id) == 0)
+                running = 0;
+            else
+                set_status("Unable to write one-boot selection");
         }
     } else if (key == BTN_START) {
         if (selected < entry_count && strcmp(entries[selected].status,"disabled") != 0) {
             if (run_manager("set-default", entries[selected].id) == 0 &&
-                write_selection(entries[selected].id) == 0) running = 0;
-            else 
+                write_selection(entries[selected].id) == 0) {
+                set_status("Default saved");
+                running = 0;
+            } else {
+                set_status("Could not save default profile");
+            }
         }
     } else if (key == BTN_SELECT) {
         if (selected < entry_count) {
             const char *action = strcmp(entries[selected].status,"disabled") == 0 ?
                                  "enable-package" : "disable-package";
             if (run_manager(action, entries[selected].id) == 0) {
-                
+                set_status("Frontend status updated");
                 reload_catalog();
-            } else 
+            } else {
+                set_status("Could not change frontend status");
+            }
         }
     } else if (key == BTN_WEST) {
         if (selected < entry_count && strcmp(entries[selected].kind,"managed") == 0) {
@@ -545,8 +620,26 @@ static void handle_selector_key(int key)
 
 static void handle_diagnostics_key(int key)
 {
-    if (key == BTN_EAST || key == BTN_SOUTH) page_diagnostics = 0;
-    else if (key == BTN_START) reload_catalog();
+    if (page_diagnostics == 1) {
+        if (key == BTN_SOUTH) {
+            page_diagnostics = 2;
+            last_tested_key = -1;
+            set_status("Press buttons to test");
+        } else if (key == BTN_EAST) {
+            page_diagnostics = 0;
+            set_status("Frontend selector");
+        } else if (key == BTN_START) {
+            reload_catalog();
+            set_status("Diagnostics refreshed");
+        }
+    } else if (page_diagnostics == 2) {
+        if (key == BTN_EAST || key == BTN_SOUTH) {
+            page_diagnostics = 1;
+            set_status("Diagnostics");
+        } else {
+            last_tested_key = key;
+        }
+    }
 }
 
 static int run_ui(void)
@@ -575,7 +668,7 @@ static int run_ui(void)
 int main(int argc, char **argv)
 {
     if (argc == 2 && strcmp(argv[1], "--boot-held") == 0)
-        return boot_chord_held() ? 0 : 1;
+        return boot_selector_held() ? 0 : 1;
     if (argc == 2 && strcmp(argv[1], "--diagnostics") == 0) {
         page_diagnostics = 1;
         return run_ui();
