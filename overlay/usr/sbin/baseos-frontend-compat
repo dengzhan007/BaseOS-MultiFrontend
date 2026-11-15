@@ -6,8 +6,8 @@ PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
 . "${BASEOS_DISCOVERY_LIB:-/usr/sbin/baseos-frontend-discovery}"
 
-TF1=${BASEOS_FRONTEND_TF1:-/mnt/SDCARD}
-TF2=${BASEOS_FRONTEND_TF2:-/mnt/TF2}
+TF1=${BASEOS_FRONTEND_TF1:-/mnt/sdcard}
+TF2=${BASEOS_FRONTEND_TF2:-$TF1}
 
 normalise_id() {
   ni_raw=$1
