@@ -52,11 +52,9 @@ static struct fb_var_screeninfo fb_var;
 static struct fb_fix_screeninfo fb_fix;
 static FT_Library ft_lib;
 static FT_Face ft_face;
-static char status_text[160] = "Ready";
 static int confirm_mode;
 static int confirm_action;
 static int page_diagnostics;
-static int parent_selector;
 static volatile sig_atomic_t running = 1;
 
 enum { CONFIRM_NONE, CONFIRM_PROFILE, CONFIRM_PACKAGE };
@@ -88,7 +86,8 @@ static int open_inputs(void)
         memset(keybits, 0, sizeof(keybits));
         if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) < 0 ||
             !(bit_set(keybits, BTN_SOUTH) && bit_set(keybits, BTN_EAST) &&
-              bit_set(keybits, KEY_UP) && bit_set(keybits, KEY_DOWN))) {
+              (bit_set(keybits, KEY_UP) || bit_set(keybits, BTN_DPAD_UP)) &&
+              (bit_set(keybits, KEY_DOWN) || bit_set(keybits, BTN_DPAD_DOWN)))) {
             close(fd);
             continue;
         }
@@ -226,26 +225,24 @@ static void draw_line(int x, int baseline, const char *s, int px,
                       uint32_t fg, int max_width)
 {
     char tmp[220];
-    if (strlen(s) >= sizeof(tmp)) {
-        snprintf(tmp, sizeof(tmp), "%.210s", s);
-        s = tmp;
-    }
-    /* Freetype width estimation; trim from the end on narrow panels. */
-    while (*s && ft_face) {
+    size_t len = strlen(s);
+    if (len >= sizeof(tmp)) len = sizeof(tmp) - 1;
+    memcpy(tmp, s, len);
+    tmp[len] = 0;
+    if (ft_face) {
         FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)px);
-        int width = 0;
-        for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
-            if (*p < 0x20 || *p > 0x7e) continue;
-            if (!FT_Load_Char(ft_face, *p, FT_LOAD_DEFAULT))
-                width += (int)(ft_face->glyph->advance.x >> 6);
+        while (len > 0) {
+            int width = 0;
+            for (const unsigned char *p = (const unsigned char *)tmp; *p; ++p) {
+                if (*p < 0x20 || *p > 0x7e) continue;
+                if (!FT_Load_Char(ft_face, *p, FT_LOAD_DEFAULT))
+                    width += (int)(ft_face->glyph->advance.x >> 6);
+            }
+            if (width <= max_width) break;
+            tmp[--len] = 0;
         }
-        if (width <= max_width) break;
-        size_t n = strlen(s);
-        if (!n) break;
-        snprintf(tmp, sizeof(tmp), "%.*s", (int)n - 1, s);
-        s = tmp;
     }
-    draw_text(x, baseline, s, px, fg);
+    draw_text(x, baseline, tmp, px, fg);
 }
 
 static void read_field(char **fields, int n, int index, char *dst, size_t cap)
@@ -482,25 +479,20 @@ static int next_key(int timeout_ms)
     return -1;
 }
 
-static void set_status(const char *s)
-{
-    snprintf(status_text, sizeof(status_text), "%s", s);
-}
-
 static void handle_selector_key(int key)
 {
     if (confirm_mode) {
         if (key == BTN_EAST) {
             confirm_mode = CONFIRM_NONE;
-            set_status("Cancelled");
+            
             return;
         }
         if (key == BTN_SOUTH && selected < entry_count) {
             Frontend *e = &entries[selected];
             const char *action = confirm_action == CONFIRM_PROFILE ? "uninstall" :
                                  "uninstall-package";
-            if (run_manager(action, e->id) == 0) set_status("Removed successfully");
-            else set_status("Remove failed");
+            if (run_manager(action, e->id) == 0) 
+            else 
             confirm_mode = CONFIRM_NONE;
             reload_catalog();
         }
@@ -519,22 +511,22 @@ static void handle_selector_key(int key)
         }
         if (selected < entry_count && strcmp(entries[selected].status,"disabled") != 0) {
             if (write_selection(entries[selected].id) == 0) running = 0;
-            else set_status("Unable to save selection");
+            else 
         }
     } else if (key == BTN_START) {
         if (selected < entry_count && strcmp(entries[selected].status,"disabled") != 0) {
             if (run_manager("set-default", entries[selected].id) == 0 &&
                 write_selection(entries[selected].id) == 0) running = 0;
-            else set_status("Could not save default profile");
+            else 
         }
     } else if (key == BTN_SELECT) {
         if (selected < entry_count) {
             const char *action = strcmp(entries[selected].status,"disabled") == 0 ?
                                  "enable-package" : "disable-package";
             if (run_manager(action, entries[selected].id) == 0) {
-                set_status("Frontend status updated");
+                
                 reload_catalog();
-            } else set_status("Could not change frontend status");
+            } else 
         }
     } else if (key == BTN_WEST) {
         if (selected < entry_count && strcmp(entries[selected].kind,"managed") == 0) {
