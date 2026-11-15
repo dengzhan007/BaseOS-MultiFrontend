@@ -182,7 +182,7 @@ grep -qx 'config_target=Config' "$SLOT_MAP" || fail "Slot Config target was not 
 sh "$HELPER" apply "$CARD" "$SLOT_PROGRAM" "$SLOT_MAP" "$SLOT_USERDATA" "$SLOT_INSTANCE" || \
   fail "Slot per-profile Config mapping failed"
 [ -L "$CARD/Config" ] || fail "Slot Config was not redirected to the profile"
-[ "$(readlink "$CARD/Config")" = "$SLOT_INSTANCE/config" ] || fail "Slot Config does not point to profile config"
+[ "$(readlink "$CARD/Config")" = "$SLOT_INSTANCE/frontend-config" ] || fail "Slot Config does not point to profile-private frontend config"
 [ -L "$CARD/.userdata" ] || fail "Slot userdata alias was not created"
 [ "$(readlink "$CARD/.userdata")" = "$SLOT_USERDATA" ] || fail "Slot userdata alias is not profile-private"
 sh "$HELPER" cleanup "$CARD" || fail "Slot per-profile path-map cleanup failed"
