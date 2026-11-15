@@ -315,6 +315,13 @@ if { [ -e /run/boot-menu-held ] || /usr/sbin/boot-menu-held; } \
 	&& /usr/sbin/usb-storage-mode prepare; then
 	USB_STORAGE_MODE=1
 fi
+# Capture L1/R1 at the earliest userspace point. Either shoulder key
+# requests the frontend selector; USB-storage (MENU) has already won above.
+if [ "$USB_STORAGE_MODE" -eq 0 ] &&
+   [ -x /usr/sbin/baseos-control-center ] &&
+   /usr/sbin/baseos-control-center --boot-held; then
+	: > /run/baseos-frontend-select.boot-request
+fi
 
 # Normal boot mounts the frontend/data card: TF2 p1 wins if usable, else this
 # card's own "primary" FAT partition (p7).
