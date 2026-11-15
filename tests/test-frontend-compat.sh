@@ -129,7 +129,7 @@ grep -F -q "$unicode_id--default|街机|" "$CATALOG" || fail "all-Unicode folder
 baseos_frontend_scan_root "$TF1" NextUI || fail "legacy simple frontend_id pin was not resolved"
 [ "$BASEOS_SCAN_ID" = "NextUI--default" ] || fail "legacy simple frontend_id did not resolve to its default profile"
 [ "$BASEOS_SCAN_KIND" = "compat-package" ] || fail "simple frontend_id pin did not select the compatibility package"
-[ "$(wc -l < "$CATALOG" | tr -d ' ')" = 5 ] || fail "expected five independent compatibility entries"
+[ "$(wc -l < "$CATALOG" | tr -d ' ')" = 8 ] || fail "expected eight independent compatibility entries"
 
 # Y action disables the compatibility entry but preserves metadata and program
 # files. Disabled entries stay listed and cannot be selected by boot discovery.
