@@ -160,6 +160,11 @@ if mountpoint -q "$SD" 2>/dev/null; then
 	fi
 fi
 
+# LAUNCH was a NextUI updater candidate during the install check above. Clear
+# that placeholder when no MinUI entrypoint exists, otherwise it masks Slot,
+# spruceOS and generic frontends during the later fallback discovery.
+[ -f "$LAUNCH" ] || LAUNCH=
+
 # BaseOS-owned multi-frontend catalog. Metadata lives below .baseos;
 # original frontend program directories are treated as read-only input.
 FRONTEND_CATALOG_SELECTED=no
