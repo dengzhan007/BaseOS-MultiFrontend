@@ -1,0 +1,85 @@
+#!/bin/sh
+# Persist one BaseOS-owned setting into TF1's baseos.conf.
+# /run/baseos.conf is the session's read/write copy; this helper writes the
+# persistent source only when the user explicitly changes frontend_id.
+set -eu
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+[ "$#" -eq 2 ] || { echo "usage: baseos-config-save frontend_id VALUE" >&2; exit 2; }
+key=$1
+value=$2
+[ "$key" = frontend_id ] || { echo "unsupported persistent setting: $key" >&2; exit 2; }
+case "$value" in
+  auto) ;;
+  ''|.*|-*|_*|*[!A-Za-z0-9._-]*|*/*|*'|'*) echo "invalid frontend_id" >&2; exit 2 ;;
+  *) [ "\${#value}" -le 48 ] || { echo "invalid frontend_id" >&2; exit 2; } ;;
+esac
+
+RUN=\${BASEOS_RUN_ROOT:-/run}
+TARGET_FILE=$RUN/baseos-config-target
+[ -r "$TARGET_FILE" ] || { echo "no persistent BaseOS configuration source" >&2; exit 1; }
+IFS= read -r target < "$TARGET_FILE" || target=
+case "$target" in
+  ''|/dev/null)
+    echo "BaseOS configuration source is unavailable on this boot" >&2
+    exit 1
+    ;;
+  /dev/mmcblk0p7)
+    MOUNT=\${BASEOS_CONFIG_MOUNT:-/mnt/system}
+    DEVICE=\${BASEOS_CONFIG_DEVICE:-/dev/mmcblk0p7}
+    mkdir -p "$MOUNT"
+    owned_mount=no
+    remounted_ro=no
+    if grep -q " $MOUNT " /proc/mounts 2>/dev/null; then
+      mount_line=$(awk -v m="$MOUNT" '$2 == m { print $4; exit }' /proc/mounts)
+      case ",$mount_line," in
+        *,ro,*) mount -o remount,rw "$MOUNT"; remounted_ro=yes ;;
+      esac
+    else
+      mount -t auto -o rw,noatime "$DEVICE" "$MOUNT"
+      owned_mount=yes
+    fi
+    cleanup() {
+      if [ "$owned_mount" = yes ]; then
+        umount "$MOUNT" 2>/dev/null || :
+      elif [ "$remounted_ro" = yes ]; then
+        mount -o remount,ro "$MOUNT" 2>/dev/null || :
+      fi
+    }
+    trap cleanup EXIT HUP INT TERM
+    path=$MOUNT/baseos.conf
+    ;;
+  /*)
+    path=$target
+    ;;
+  *)
+    echo "invalid persistent BaseOS configuration target" >&2
+    exit 1
+    ;;
+esac
+
+[ ! -L "$path" ] || { echo "refusing symlinked baseos.conf: $path" >&2; exit 1; }
+dir=\${path%/*}
+[ "$dir" != "$path" ] || dir=.
+mkdir -p "$dir"
+tmp=$path.baseos-tmp.$$
+[ ! -L "$tmp" ] || { echo "refusing symlinked config temporary file" >&2; exit 1; }
+rm -f "$tmp"
+if [ -f "$path" ]; then
+  awk -v key="$key" -v value="$value" '
+    BEGIN { written=0 }
+    /^[[:space:]]*frontend_id=/ {
+      if (!written) print key "=" value
+      written=1
+      next
+    }
+    { print }
+    END { if (!written) print key "=" value }
+  ' "$path" > "$tmp"
+else
+  printf '%s=%s\n' "$key" "$value" > "$tmp"
+fi
+chmod 644 "$tmp"
+mv -f "$tmp" "$path"
+sync
