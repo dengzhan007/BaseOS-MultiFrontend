@@ -11,7 +11,7 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 docker run --rm -i --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$HERE/overlay/usr/sbin/frontend-session":/usr/sbin/frontend-session:ro \
   -v "$HERE/overlay/usr/share/baseos/boot-log.sh":/usr/share/baseos/boot-log.sh:ro \
-  alpine:3.20 sh -eu <<'TEST'
+  alpine:3.20 sh -eux <<'TEST'
 mkdir -p /usr/local/bin /usr/sbin /mnt/sdcard /data
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ln -s /mnt/sdcard /mnt/SDCARD
@@ -168,7 +168,11 @@ generic_card() {
 }
 run_session() {
 	status=0
-	timeout 5 sh /usr/sbin/frontend-session > /tmp/console.log 2>&1 || status=$?
+	timeout 5 sh -x /usr/sbin/frontend-session > /tmp/console.log 2>&1 || status=$?
+	if [ "$status" -ne 0 ]; then
+		echo "frontend-session returned $status; console follows:" >&2
+		cat /tmp/console.log >&2
+	fi
 }
 no_legacy_logs() {
 	[ ! -e /tmp/nextui-session.log ] \
