@@ -1,7 +1,7 @@
 #!/bin/sh
 # The frontend session, respawned by busybox init. Replaces the whole stock
 # chain (launcher.service -> launcher.sh -> loadapp.sh -> dmenu_ln -> boot
-# shim). Runs NextUI, Slot, spruceOS or a generic frontend from the card.
+# shim). Runs any discovered frontend through the BaseOS adapter contract.
 
 # Export release metadata for installers and every frontend entry point.
 if [ -r /etc/baseos-release ]; then
@@ -116,47 +116,24 @@ while ! mountpoint -q "$SD" 2>/dev/null; do
 	n=$((n + 1))
 done
 
-# Update flow: same triggers as the old boot shim (02-boot-and-installer.md).
+# Optional BaseOS-owned installer hook. Frontend names and vendor-specific
+# archive conventions do not belong in this boot supervisor.
 if mountpoint -q "$SD" 2>/dev/null; then
-	select_boot_log
-	flush_early_boot_log
-	ZIP="$SD/MinUI.zip"
-	NEXTUI_LAUNCH="$SD/.system/h700/paks/MinUI.pak/launch.sh"
-	HAVE_PAKZ=0
-	for z in "$SD"/*.pakz; do [ -f "$z" ] && HAVE_PAKZ=1 && break; done
-	if [ -f "$ZIP" ] || [ "$HAVE_PAKZ" = 1 ]; then
-		# NextUI's installer can't draw its own UI on base OS: its show2.elf
-		# needs libSDL2/_image/_ttf, which base OS doesn't ship in /usr/lib (the
-		# stock OS did) and NextUI's own SDL2 isn't extracted yet when it runs.
-		# So paint one static install/update pill and let the (~1 min) work run
-		# under it. Deliberately NOT animated: a background draw loop raced
-		# NextUI's first frame and left the splash stuck over its static menu.
-		if [ -f "$NEXTUI_LAUNCH" ]; then
-			important_splash 85 "UPDATING FRONTEND"
-		else
-			important_splash 85 "INSTALLING FRONTEND"
-		fi
-		if [ ! -f "$SD/.tmp_update/h700.sh" ] && [ -f "$ZIP" ]; then
-			log "bootstrapping installer from MinUI.zip"
-			unzip -o "$ZIP" ".tmp_update/*" -d "$SD" >> "$LOG" 2>&1
-			log "bootstrap unzip exited $?"
-		fi
-		if [ -f "$SD/.tmp_update/h700.sh" ]; then
-			log "running installer/updater"
-			if sh "$SD/.tmp_update/h700.sh" >> "$LOG" 2>&1; then
-				log "installer exited 0"
-			else
-				installer_status=$?
-				log "installer exited $installer_status"
-				important_splash -1 "INSTALL FAILED"
-				INSTALL_FAILED=1
-			fi
-		else
-			log "installer missing after bootstrap"
-			important_splash -1 "INSTALL FAILED"
-			INSTALL_FAILED=1
-		fi
-	fi
+  select_boot_log
+  flush_early_boot_log
+  INSTALL_HOOK="$SD/.baseos/install.sh"
+  if [ -f "$INSTALL_HOOK" ] && [ ! -L "$INSTALL_HOOK" ]; then
+    important_splash 85 "INSTALLING FRONTEND"
+    log "running BaseOS frontend install hook"
+    if sh "$INSTALL_HOOK" >> "$LOG" 2>&1; then
+      log "frontend install hook exited 0"
+    else
+      installer_status=$?
+      log "frontend install hook exited $installer_status"
+      important_splash -1 "INSTALL FAILED"
+      INSTALL_FAILED=1
+    fi
+  fi
 fi
 
 # BaseOS-owned multi-frontend catalog. Metadata lives below .baseos;
@@ -360,37 +337,25 @@ fi
 LAUNCH=${LAUNCH:-}
 FRONTEND=${FRONTEND:-}
 LAUNCH_TYPE=${LAUNCH_TYPE:-script}
-if [ -z "$LAUNCH" ]; then
-	# Keep direct H700 entry points working for cards without a BaseOS manifest.
-	if [ -f "$SD/System/frontend" ]; then
-		LAUNCH="$SD/System/frontend"
-		FRONTEND=generic
-		LAUNCH_TYPE=binary
-	elif [ -f "$SD/System/launch_frontend.sh" ]; then
-		LAUNCH="$SD/System/launch_frontend.sh"
-		FRONTEND=generic
-	elif [ -f "$SD/System/slot" ]; then
-		LAUNCH="$SD/System/slot"
-		FRONTEND=slot
-		LAUNCH_TYPE=binary
-	elif [ -f "$SD/.system/h700/paks/MinUI.pak/launch.sh" ]; then
-		LAUNCH="$SD/.system/h700/paks/MinUI.pak/launch.sh"
-		FRONTEND=nextui
-	elif [ -f "$SD/spruce/scripts/runtime.sh" ]; then
-		# spruceOS uses the conventional uppercase card-root alias throughout
-		# its runtime scripts; preserve that spelling in $0 as well.
-		LAUNCH="/mnt/SDCARD/spruce/scripts/runtime.sh"
-		FRONTEND=spruce
-	fi
+COMPAT_DIRECT_ENTRY=
+COMPAT_DIRECT_MODE=
+
+# Legacy single-frontend cards use the same structure-based adapter resolver
+# as Frontends/<id>/ packages. No frontend basename is interpreted here.
+if [ -z "$LAUNCH" ] && [ "$CARD_MISSING" -eq 0 ] &&
+   [ -x /usr/sbin/baseos-frontend-compat ]; then
+  direct_descriptor=$(/usr/sbin/baseos-frontend-compat probe "$SD" 2>/dev/null) || direct_descriptor=
+  if [ -n "$direct_descriptor" ]; then
+    IFS='|' read -r COMPAT_DIRECT_ENTRY COMPAT_DIRECT_MODE <<EOF
+$direct_descriptor
+EOF
+    LAUNCH="$SD/$COMPAT_DIRECT_ENTRY"
+    FRONTEND=compat
+    LAUNCH_TYPE=compat
+  fi
 fi
 
 if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
-	if [ "$FRONTEND" = slot ]; then
-		export SLOT_ROOT="$SD"
-	fi
-	if [ "$FRONTEND" = slot ] || [ "$FRONTEND" = generic ]; then
-		cd "$SD" || exit 1
-	fi
 	# rcS loads mali_kbase in the background; make sure /dev/mali0 exists
 	# before the frontend initializes graphics (near-always already true).
 	m=0
@@ -398,20 +363,13 @@ if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 		sleep 0.1 2>/dev/null || sleep 1
 		m=$((m + 1))
 	done
-	# A plain name for the log: the pak's name (MinUI for NextUI's MinUI.pak),
-	# else the frontend's own.
+	# Display names are metadata from the catalog or a neutral legacy label.
 	if [ "$FRONTEND_CATALOG_SELECTED" = yes ]; then
 		frontend_name=$FRONTEND_NAME
+	elif [ "$FRONTEND" = compat ]; then
+		frontend_name=legacy-frontend
 	else
-		case "$LAUNCH" in
-			*/*.pak/*) frontend_name=${LAUNCH%.pak/*} frontend_name=${frontend_name##*/} ;;
-		*)
-			case "$FRONTEND" in
-				slot) frontend_name=Slot ;;
-				spruce) frontend_name=spruceOS ;;
-				*) frontend_name="custom frontend" ;;
-			esac ;;
-		esac
+		frontend_name=frontend
 	fi
 	gpu_wait=
 	[ "$m" -eq 0 ] || gpu_wait=", after $((m / 10)).$((m % 10)) s waiting for the GPU"
@@ -444,11 +402,11 @@ if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 		cd "$SD" || exit 1
 	fi
 	frontend_log=/tmp/${SELECTED:-$FRONTEND}.log
-	if [ "$LAUNCH_TYPE" = binary ]; then
-		# Use the system glibc loader: copied binaries need no executable bit.
+	if [ "$LAUNCH_TYPE" = compat ]; then
+		/usr/sbin/baseos-frontend-compat launch "$SD" "$COMPAT_DIRECT_ENTRY" "$COMPAT_DIRECT_MODE" > "$frontend_log" 2>&1
+	elif [ "$LAUNCH_TYPE" = binary ]; then
+		# Use the system glibc loader: managed binary payloads need no x bit.
 		/lib/ld-linux-aarch64.so.1 "$LAUNCH" > "$frontend_log" 2>&1
-	elif [ "$FRONTEND" = generic ]; then
-		/bin/sh "$LAUNCH" > "$frontend_log" 2>&1
 	else
 		/bin/sh "$LAUNCH" > "$frontend_log" 2>&1
 	fi
