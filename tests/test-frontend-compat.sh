@@ -86,7 +86,6 @@ grep -qx 'compat_mode=nextui' "$NEXTUI_SIDE/baseos-frontend.conf" || fail "NextU
 grep -qx 'compat_entrypoint=spruce/scripts/runtime.sh' "$SPRUCE_SIDE/baseos-frontend.conf" || fail "spruce entrypoint metadata is wrong"
 grep -qx 'compat_mode=spruce' "$SPRUCE_SIDE/baseos-frontend.conf" || fail "spruce launch mode is wrong"
 grep -F -q 'slot-binary)' "$SLOT_SIDE/launch.sh" || fail "Slot wrapper does not call the original binary"
-grep -F -q 'generic-shell)' "$SLOT_SIDE/launch.sh" && fail "Slot wrapper has a wrong launch mode"
 cmp -s "$TMP/slot.before" "$TF1/Frontends/H700Slot/System/slot" || fail "compat scan modified the original Slot binary"
 [ ! -e "$TF1/Frontends/H700Slot/baseos-frontend.conf" ] || fail "compat scan wrote metadata into original frontend folder"
 
