@@ -246,8 +246,14 @@ EOF
 			. /usr/sbin/baseos-frontend-discovery
 			case "$FRONTEND_CATALOG_KIND" in
 				managed|compat)
+					FRONTEND_MANIFEST_DIR=$FRONTEND_PACKAGE_DIR
+					if [ "$FRONTEND_CATALOG_KIND" = compat ]; then
+						# Catalog rows carry the untouched source folder for removal
+						# safety. Its BaseOS manifest and launch wrapper live separately.
+						FRONTEND_MANIFEST_DIR=$FRONTEND_CATALOG_ROOT/.baseos/compat/$FRONTEND_PACKAGE_ID
+					fi
 					if baseos_frontend_load_package "$FRONTEND_CATALOG_ROOT" \
-						"$FRONTEND_PACKAGE_DIR" "$FRONTEND_PROFILE_DEFAULTS"; then
+						"$FRONTEND_MANIFEST_DIR" "$FRONTEND_PROFILE_DEFAULTS"; then
 						FRONTEND_PACKAGE_MODE=yes
 						FRONTEND_PACKAGE_ID=$BASEOS_PACKAGE_ID
 						FRONTEND_PROFILE_ID=$BASEOS_PROFILE_ID
@@ -255,6 +261,7 @@ EOF
 						if [ "$FRONTEND_CATALOG_KIND" = compat ]; then
 							FRONTEND_PROGRAM_ROOT=$BASEOS_COMPAT_PROGRAM_DIR
 						else
+							FRONTEND_PACKAGE_DIR=$FRONTEND_MANIFEST_DIR
 							FRONTEND_PROGRAM_ROOT=$FRONTEND_PACKAGE_DIR
 							[ ! -d "$FRONTEND_PROGRAM_ROOT/payload" ] || \
 								FRONTEND_PROGRAM_ROOT=$FRONTEND_PROGRAM_ROOT/payload
