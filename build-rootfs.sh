@@ -149,7 +149,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
             "$R/usr/sbin/boot-menu-held" "$R/usr/sbin/baseos-charger" \
             "$R/usr/sbin/baseos-poweroff" "$R/usr/sbin/baseos-reboot" \
             "$R/usr/sbin/poweroff" "$R/usr/sbin/reboot" \
-            "$R/usr/sbin/baseos-config" "$R/usr/sbin/baseos-mdns" "$R/usr/sbin/h700-speaker-amp-load" \
+            "$R/usr/sbin/baseos-config" "$R/usr/sbin/baseos-config-save" "$R/usr/sbin/baseos-mdns" "$R/usr/sbin/h700-speaker-amp-load" \
             "$R/usr/sbin/baseos-startup-sound" \
             "$R/usr/sbin/usb-gadget-adb" "$R/usr/sbin/usb-storage-mode" \
             "$R/mnt/vendor/ctrl/setBluetooth.sh" \
@@ -170,7 +170,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
            /usr/sbin/boot-menu-held /usr/sbin/baseos-charger \
            /usr/sbin/baseos-poweroff /usr/sbin/baseos-reboot \
            /usr/sbin/poweroff /usr/sbin/reboot \
-           /usr/sbin/baseos-config /usr/sbin/baseos-mdns /usr/sbin/h700-speaker-amp-load \
+           /usr/sbin/baseos-config /usr/sbin/baseos-config-save /usr/sbin/baseos-mdns /usr/sbin/h700-speaker-amp-load \
            /usr/sbin/baseos-startup-sound \
            /usr/sbin/usb-gadget-adb /usr/sbin/usb-storage-mode \
            /mnt/vendor/ctrl/setBluetooth.sh; do
