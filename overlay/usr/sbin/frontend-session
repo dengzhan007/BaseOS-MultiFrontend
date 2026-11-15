@@ -122,7 +122,7 @@ if mountpoint -q "$SD" 2>/dev/null; then
 	select_boot_log
 	flush_early_boot_log
 	ZIP="$SD/MinUI.zip"
-	LAUNCH="$SD/.system/h700/paks/MinUI.pak/launch.sh"
+	NEXTUI_LAUNCH="$SD/.system/h700/paks/MinUI.pak/launch.sh"
 	HAVE_PAKZ=0
 	for z in "$SD"/*.pakz; do [ -f "$z" ] && HAVE_PAKZ=1 && break; done
 	if [ -f "$ZIP" ] || [ "$HAVE_PAKZ" = 1 ]; then
@@ -132,7 +132,7 @@ if mountpoint -q "$SD" 2>/dev/null; then
 		# So paint one static install/update pill and let the (~1 min) work run
 		# under it. Deliberately NOT animated: a background draw loop raced
 		# NextUI's first frame and left the splash stuck over its static menu.
-		if [ -f "$LAUNCH" ]; then
+		if [ -f "$NEXTUI_LAUNCH" ]; then
 			important_splash 85 "UPDATING FRONTEND"
 		else
 			important_splash 85 "INSTALLING FRONTEND"
@@ -159,11 +159,6 @@ if mountpoint -q "$SD" 2>/dev/null; then
 		fi
 	fi
 fi
-
-# LAUNCH was a NextUI updater candidate during the install check above. Clear
-# that placeholder when no MinUI entrypoint exists, otherwise it masks Slot,
-# spruceOS and generic frontends during the later fallback discovery.
-[ -f "$LAUNCH" ] || LAUNCH=
 
 # BaseOS-owned multi-frontend catalog. Metadata lives below .baseos;
 # original frontend program directories are treated as read-only input.
