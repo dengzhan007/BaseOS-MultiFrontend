@@ -169,25 +169,26 @@ sh "$HELPER" cleanup "$FALLBACK_CARD" || fail "exFAT fallback stale-alias cleanu
 [ -f "$FALLBACK_CARD/Games/FC/fallback.rom" ] || \
   fail "exFAT fallback cleanup modified canonical Games data"
 
-# Slot uses Config/favorites.txt and Config/recents.txt. BaseOS exposes
-# Config as a per-profile alias while keeping Games and Saves at card level.
-SLOT_PROGRAM=$CARD/Frontends/Slot
-SLOT_INSTANCE=$CARD/.baseos/instances/Slot--default
-SLOT_USERDATA=$SLOT_INSTANCE/userdata
-mkdir -p "$SLOT_PROGRAM/System" "$SLOT_INSTANCE/config" "$SLOT_USERDATA"
-: > "$SLOT_PROGRAM/System/slot"
-sh "$HELPER" scan "$CARD" Slot "$SLOT_PROGRAM" || fail "Slot profile path-map scan failed"
-SLOT_MAP=$CARD/.baseos/frontend-paths/Slot.conf
-grep -qx 'config_target=Config' "$SLOT_MAP" || fail "Slot Config target was not detected"
-sh "$HELPER" apply "$CARD" "$SLOT_PROGRAM" "$SLOT_MAP" "$SLOT_USERDATA" "$SLOT_INSTANCE" || \
-  fail "Slot per-profile Config mapping failed"
-[ -L "$CARD/Config" ] || fail "Slot Config was not redirected to the profile"
-[ "$(readlink "$CARD/Config")" = "$SLOT_INSTANCE/frontend-config" ] || fail "Slot Config does not point to profile-private frontend config"
-[ -L "$CARD/.userdata" ] || fail "Slot userdata alias was not created"
-[ "$(readlink "$CARD/.userdata")" = "$SLOT_USERDATA" ] || fail "Slot userdata alias is not profile-private"
-sh "$HELPER" cleanup "$CARD" || fail "Slot per-profile path-map cleanup failed"
-[ ! -L "$CARD/Config" ] || fail "Slot Config alias survived cleanup"
-[ ! -L "$CARD/.userdata" ] || fail "Slot userdata alias survived cleanup"
-[ -f "$SLOT_PROGRAM/System/slot" ] || fail "Slot path-map modified the original program"
+# A conventional Config/ directory is profile-private for any frontend;
+# it is not inferred from a particular binary or frontend name.
+PROFILE_PROGRAM=$CARD/Frontends/profile-app
+PROFILE_INSTANCE=$CARD/.baseos/instances/profile-app--default
+PROFILE_USERDATA=$PROFILE_INSTANCE/userdata
+mkdir -p "$PROFILE_PROGRAM/Config" "$PROFILE_INSTANCE/config" "$PROFILE_USERDATA"
+: > "$PROFILE_PROGRAM/Config/favorites.txt"
+: > "$PROFILE_PROGRAM/Config/recents.txt"
+sh "$HELPER" scan "$CARD" profile-app "$PROFILE_PROGRAM" || fail "generic Config layout path-map scan failed"
+PROFILE_MAP=$CARD/.baseos/frontend-paths/profile-app.conf
+grep -qx 'config_target=Config' "$PROFILE_MAP" || fail "generic Config target was not detected"
+sh "$HELPER" apply "$CARD" "$PROFILE_PROGRAM" "$PROFILE_MAP" "$PROFILE_USERDATA" "$PROFILE_INSTANCE" || \
+  fail "generic per-profile Config mapping failed"
+[ -L "$CARD/Config" ] || fail "Config directory was not redirected to the profile"
+[ "$(readlink "$CARD/Config")" = "$PROFILE_INSTANCE/frontend-config" ] || fail "Config does not point to profile-private frontend config"
+[ -L "$CARD/.userdata" ] || fail "userdata alias was not created"
+[ "$(readlink "$CARD/.userdata")" = "$PROFILE_USERDATA" ] || fail "userdata alias is not profile-private"
+sh "$HELPER" cleanup "$CARD" || fail "generic per-profile Config cleanup failed"
+[ ! -L "$CARD/Config" ] || fail "Config alias survived cleanup"
+[ ! -L "$CARD/.userdata" ] || fail "userdata alias survived cleanup"
+[ -f "$PROFILE_PROGRAM/Config/favorites.txt" ] || fail "path-map modified original frontend files"
 
 echo "PASS: BaseOS path maps share frontend cores and preserve legacy ROM paths"
