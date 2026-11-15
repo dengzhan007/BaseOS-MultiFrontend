@@ -364,7 +364,7 @@ if [ -z "$LAUNCH" ]; then
 	fi
 fi
 
-f [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
+if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 	if [ "$FRONTEND" = slot ]; then
 		export SLOT_ROOT="$SD"
 	fi
