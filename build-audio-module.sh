@@ -21,8 +21,8 @@ done
 # This compiler is the GCC 8.3 H700 toolchain used to validate the vendor ABI.
 docker run --rm --platform linux/arm64 \
   -v "$OUT":/out -v "$CACHE":/cache \
-  -v "$HERE/work/tools/curl":/tools/curl:ro \
-  -v "$HERE/work/tools/ca-certificates.crt":/tools/ca-certificates.crt:ro \
+  -v "$HERE/work/tools/curl":/tmp/baseos-curl:ro \
+  -v "$HERE/work/tools/ca-certificates.crt":/tmp/baseos-ca-certificates.crt:ro \
   ghcr.io/loveretro/h700-toolchain@sha256:bf5d8f9f5442cad789aa77176bc059ec823caefa3258bf30780eee681c777119 \
   sh -euc '
   if ! command -v bc >/dev/null; then
@@ -31,8 +31,8 @@ docker run --rm --platform linux/arm64 \
   fi
   ARCHIVE=/cache/linux-4.9.170.tar.xz
   if [ ! -f "$ARCHIVE" ]; then
-    /tools/curl --fail --location --silent --show-error \
-      --cacert /tools/ca-certificates.crt \
+    /tmp/baseos-curl --fail --location --silent --show-error \
+      --cacert /tmp/baseos-ca-certificates.crt \
       https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-4.9.170.tar.xz -o "$ARCHIVE.tmp"
     mv "$ARCHIVE.tmp" "$ARCHIVE"
   fi
