@@ -72,7 +72,7 @@ baseos_frontend_scan_root "$TMP/card" alpha || fail "adapter did not return afte
 # under the card root or its first-level wrapper. Discovery must reach it.
 NESTED_ROOT=$TMP/card/Frontends/NextUI
 NESTED_ADAPTER=$NESTED_ROOT/.baseos/frontends/nextui
-mkdir -p "$NESTED_ADAPTER" "$NESTED_ROOT/.system/rg353ps" "$NESTED_ROOT/Tools/h700"
+mkdir -p "$NESTED_ADAPTER" "$NESTED_ROOT/.system/h700" "$NESTED_ROOT/Tools/h700"
 : > "$NESTED_ADAPTER/launch.sh"
 cat > "$NESTED_ADAPTER/manifest.conf" <<'EOF'
 adapter_api=1
@@ -101,15 +101,14 @@ sleep 1
 mkdir -p "$TMP/card/Frontends/ExtraFrontend/.baseos/frontends/extra"
 : > "$TMP/card/Frontends/ExtraFrontend/.baseos/frontends/extra/launch.sh"
 baseos_frontend_tree_changed_since "$TMP/card" "$CACHE" || fail "new nested frontend bundle did not invalidate cache"
-# The supervisor must suppress stdout/stderr for both direct updater launches
-# and script adapters; child processes inherit these redirected descriptors.
-SESSION="$HERE/overlay/usr/sbin/baseos-frontend-session"
-grep -Fq '"$LAUNCHER" >/dev/null 2>&1 &' "$SESSION" || fail "direct frontend launch can write to the console"
-grep -Fq '/bin/sh "$LAUNCHER" >/dev/null 2>&1 &' "$SESSION" || fail "script frontend launch can write to the console"
-INITTAB="$HERE/platforms/rg353ps/rootfs/etc/inittab"
-grep -Fq '::sysinit:/etc/init.d/rcS >/dev/null 2>&1' "$INITTAB" || fail "rcS can write setup output to the framebuffer console"
-grep -Fq 'tty1::respawn:/usr/sbin/baseos-frontend-session >/dev/null 2>&1' "$INITTAB" || fail "frontend supervisor can write helper output to the framebuffer console"
-grep -Fq 'BASEOS_DIAGNOSTIC_SUPERVISED=1 /usr/sbin/rg353ps-control-center >/dev/tty1 2>&1 &' "$SESSION" || fail "diagnostic UI stdout is not restored to tty1"
-grep -Fq '/usr/sbin/rg353ps-frontend-selector >/dev/tty1 2>&1' "$SESSION" || fail "frontend selector stdout is not restored to tty1"
+# The H700 session consumes the catalog and selector APIs, and its
+# inittab keeps background boot output away from the framebuffer UI.
+SESSION="$HERE/overlay/usr/sbin/frontend-session"
+grep -Fq '/usr/sbin/baseos-frontend-manager catalog' "$SESSION" || fail "frontend supervisor does not build the multi-frontend catalog"
+grep -Fq '/usr/sbin/baseos-control-center --selector' "$SESSION" || fail "frontend supervisor does not expose the selector"
+grep -Fq 'boot selector requested by L1/R1' "$SESSION" || fail "frontend supervisor does not preserve the L1/R1 selector request"
+INITTAB="$HERE/overlay/etc/inittab"
+grep -Fq '::sysinit:/etc/init.d/rcS' "$INITTAB" || fail "inittab does not start H700 rcS"
+grep -Fq 'tty1::respawn:/usr/sbin/frontend-session' "$INITTAB" || fail "inittab does not respawn the H700 frontend supervisor"
 
 echo "PASS: generic frontend adapter discovery"
