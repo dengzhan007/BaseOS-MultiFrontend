@@ -209,6 +209,6 @@ reset_card
 : > /tmp/no-card
 run_session
 [ "$status" -eq 1 ] || fail "empty-card session should return the no-card idle status"
-grep -q 'no card mounted' "$BOOT_LOG" || grep -q 'no frontend on card' "$BOOT_LOG" || fail "empty-card state was not logged"
+grep -q 'no card mounted' "$RAM_LOG" || grep -q 'no frontend on card' "$RAM_LOG" || fail "empty-card state was not logged in the RAM fallback log"
 echo "frontend session tests passed"
 TEST
