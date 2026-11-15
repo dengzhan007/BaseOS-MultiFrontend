@@ -466,8 +466,9 @@ if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
 			/usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1 || :
 		/usr/sbin/baseos-control-center --diagnostics >/dev/null 2>&1 || :
+		# Let the user leave the diagnostics screen before init respawns the UI.
+		sleep 3
 	fi
-	sleep 3
 	exit "$frontend_status"
 fi
 
