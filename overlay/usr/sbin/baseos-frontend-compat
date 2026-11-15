@@ -54,7 +54,7 @@ write_if_changed() {
 }
 
 is_elf_file() {
-  elf_magic=$(od -An -N4 -tx1 "$1" 2>/dev/null | tr -d ' \n')
+  elf_magic=$(od -An -N4 -tx1 "$1" 2>/dev/null | tr -d '[:space:]')
   [ "$elf_magic" = 7f454c46 ]
 }
 
