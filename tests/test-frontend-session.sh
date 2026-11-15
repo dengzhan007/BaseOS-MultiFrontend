@@ -105,7 +105,13 @@ reset_card() {
 }
 run_session() {
   status=0
-  timeout 5 sh /usr/sbin/frontend-session >/tmp/session-console.log 2>&1 || status=$?
+  timeout 5 sh -x /usr/sbin/frontend-session >/tmp/session-console.log 2>&1 || status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "frontend-session exit=$status; shell trace follows:" >&2
+    cat /tmp/session-console.log >&2
+    echo "boot log follows:" >&2
+    cat "$BOOT_LOG" >&2 || :
+  fi
 }
 check_handoff() {
   [ -s /run/boot-frontend-exec ] || fail "missing first handoff marker"
