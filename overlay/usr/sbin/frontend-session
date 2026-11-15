@@ -175,6 +175,7 @@ if [ ! -e /run/baseos-frontend-selector-boot-checked ]; then
 	if [ -x /usr/sbin/baseos-control-center ] &&
 	   /usr/sbin/baseos-control-center --boot-held; then
 		log "boot selector requested by L1/R1"
+		: > /run/baseos-frontend-selector-shown
 		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
 			/usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1 || :
 		rm -f /run/baseos-frontend-selection
@@ -413,22 +414,48 @@ if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 	else
 		log "Frontend started again: $frontend_name$gpu_wait"
 	fi
+	# Managed/compat packages may expect their own program directory as cwd.
+	if [ "$FRONTEND_CATALOG_SELECTED" = yes ]; then
+		cd "$FRONTEND_PROGRAM_ROOT" || exit 1
+	else
+		cd "$SD" || exit 1
+	fi
+	frontend_log=/tmp/${SELECTED:-$FRONTEND}.log
 	if [ "$LAUNCH_TYPE" = binary ]; then
-		# Binaries use the glibc AArch64 runtime. Use the system
-		# loader so a copied binary needs no executable bit or chmod on the
-		# card. Frontend output stays in RAM and is replaced on each launch.
-		exec /lib/ld-linux-aarch64.so.1 "$LAUNCH" > "/tmp/$FRONTEND.log" 2>&1
+		# Use the system glibc loader: copied binaries need no executable bit.
+		/lib/ld-linux-aarch64.so.1 "$LAUNCH" > "$frontend_log" 2>&1
+	elif [ "$FRONTEND" = generic ]; then
+		/bin/sh "$LAUNCH" > "$frontend_log" 2>&1
+	else
+		/bin/sh "$LAUNCH" > "$frontend_log" 2>&1
 	fi
-	if [ "$FRONTEND" = generic ]; then
-		exec /bin/sh "$LAUNCH" > /tmp/generic.log 2>&1
+	frontend_status=$?
+	cd / 2>/dev/null || :
+	if [ "$FRONTEND_CATALOG_SELECTED" = yes ] &&
+	   [ -x /usr/sbin/baseos-frontend-paths ]; then
+		/usr/sbin/baseos-frontend-paths cleanup "$SD" >/dev/null 2>&1 || \
+			log "WARNING: frontend path aliases did not fully clean up"
 	fi
-	exec /bin/sh "$LAUNCH"
+	log "frontend $SELECTED exited with status $frontend_status; returning to diagnostics"
+	if [ -x /usr/sbin/baseos-control-center ]; then
+		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
+			/usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1 || :
+		/usr/sbin/baseos-control-center --diagnostics >/dev/null 2>&1 || :
+	fi
+	sleep 3
+	exit 1
 fi
 
-# No frontend on the card. BaseOS ships none — the user copies one (e.g.
-# NextUI's MinUI.zip or Slot's extracted System folder) onto the card (see the
-# README.txt expand-storage left on it). Show a clear prompt and wait for a
-# reboot; init respawns us, so pace the retry.
+# With no installed frontend, open the same selector once so the user can
+# inspect diagnostics or install a compatible package without a keyboard.
+if [ "$CARD_MISSING" -eq 0 ] && [ "$INSTALL_FAILED" -eq 0 ] &&
+   [ ! -e /run/baseos-frontend-selector-shown ] &&
+   [ -x /usr/sbin/baseos-control-center ]; then
+	: > /run/baseos-frontend-selector-shown
+	BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
+		/usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1 || :
+	/usr/sbin/baseos-control-center --selector >/dev/null 2>&1 || :
+fi
 if [ "$CARD_MISSING" -eq 1 ]; then
 	log "no card mounted — waiting for insertion"
 elif [ "$INSTALL_FAILED" -eq 1 ]; then
