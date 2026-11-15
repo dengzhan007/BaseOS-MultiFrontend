@@ -57,6 +57,7 @@ static int confirm_action;
 static int page_diagnostics;
 static int last_tested_key = -1;
 static char status_text[160] = "Ready";
+static char current_default_id[64] = "auto";
 static volatile sig_atomic_t running = 1;
 
 enum { CONFIRM_NONE, CONFIRM_PROFILE, CONFIRM_PACKAGE };
@@ -255,8 +256,31 @@ static void read_field(char **fields, int n, int index, char *dst, size_t cap)
     snprintf(dst, cap, "%s", fields[index]);
 }
 
+static void load_current_default(void)
+{
+    FILE *fp = fopen("/mnt/sdcard/baseos.conf", "r");
+    char line[256];
+    snprintf(current_default_id, sizeof(current_default_id), "auto");
+    if (!fp) return;
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "frontend_id=", 12) != 0) continue;
+        char *value = line + 12;
+        value[strcspn(value, "\\r\\n")] = 0;
+        if (*value && strlen(value) < sizeof(current_default_id))
+            snprintf(current_default_id, sizeof(current_default_id), "%s", value);
+    }
+    fclose(fp);
+}
+
+static int entry_is_default(const Frontend *entry)
+{
+    return strcmp(current_default_id, "auto") != 0 &&
+           strcmp(current_default_id, entry->id) == 0;
+}
+
 static int load_catalog(void)
 {
+    load_current_default();
     FILE *fp = fopen(CATALOG, "r");
     char line[1800];
     entry_count = 0;
@@ -365,7 +389,9 @@ static void render_selector(void)
 {
     int w = (int)fb_var.xres;
     int row_h = 50;
-    draw_header("Frontend selector", "Hold L1 or R1 at boot");
+    char default_label[96];
+    snprintf(default_label, sizeof(default_label), "Default: %s", current_default_id);
+    draw_header("Frontend selector", default_label);
     draw_text(28, 105, "Installed frontend profiles", 17, colour(157, 177, 194));
     char count[80];
     snprintf(count, sizeof(count), "%d profile(s)", entry_count);
@@ -390,10 +416,11 @@ static void render_selector(void)
                   is_selected ? colour(255,255,255) : colour(216,226,235), w - 260);
         draw_line(38, y + 37, meta, 12, colour(145, 165, 180), w - 250);
         const char *tag = strcmp(e->status,"disabled")==0 ? "[DISABLED]" :
+                          entry_is_default(e) ? "[DEFAULT]" :
                           (strcmp(e->kind,"managed")==0 ? "[MANAGED]" : "[COMPAT]");
         draw_text(w - 160, y + 26, tag, 11,
                   strcmp(e->status,"disabled")==0 ? colour(236,164,108) :
-                  colour(104,195,173));
+                  entry_is_default(e) ? colour(243,194,104) : colour(104,195,173));
     }
     int diag_y = 125 + visible * row_h + 3;
     fill_rect(20, diag_y, w - 40, 39,
