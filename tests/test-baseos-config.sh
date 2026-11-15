@@ -41,7 +41,7 @@ check_runtime() {
 	[ "$(cat "$TMP/run/hostname")" = "$1" ] || fail "runtime hostname: $1"
 	printf '127.0.0.1 localhost %s\n::1 localhost\n' "$1" > "$TMP/want"
 	cmp -s "$TMP/want" "$TMP/run/hosts" || fail "runtime hosts: $1"
-	printf 'hostname=%s\nmdns=%s\nheadphone_pop_fix=%s\n' "$1" "$2" "${3:-false}" > "$TMP/want"
+	printf 'hostname=%s\nmdns=%s\nheadphone_pop_fix=%s\nfrontend_id=%s\n' "$1" "$2" "${3:-false}" "${4:-auto}" > "$TMP/want"
 	cmp -s "$TMP/want" "$TMP/run/baseos.conf" || fail "effective settings: $1/$2"
 	[ "$(grep '^hostname ' "$TMP/events")" = "hostname $1" ] \
 		|| fail "hostname must be applied exactly once"
@@ -108,6 +108,20 @@ cp "$TMP/config" "$TMP/original"
 apply "$TMP/config"
 check_runtime My-RG34xxSP false
 cmp -s "$TMP/config" "$TMP/original" || fail "card settings were modified"
+# frontend_id is surfaced in runtime config without changing the source file.
+printf 'hostname=Keep-Me\nmdns=false\nfrontend_id=slot-h700--640-native\nextra=preserve\n' > "$TMP/config"
+apply "$TMP/config"
+check_runtime Keep-Me false false slot-h700--640-native
+[ "$(cat "$TMP/run/baseos-config-target")" = "$TMP/config" ] || fail "direct config source path was not recorded"
+sh "$HERE/overlay/usr/sbin/baseos-config-save" frontend_id "slot-h700--profile-two"
+grep -qx 'frontend_id=slot-h700--profile-two' "$TMP/config" || fail "frontend_id was not saved to TF1 config"
+grep -qx 'extra=preserve' "$TMP/config" || fail "saving frontend_id discarded unrelated settings"
+
+# When the settings source was the temporary TF1 mount, remember the partition
+# instead of the mountpoint: rcS unmounts /mnt/system before frontend startup.
+printf 'BASEOS_TARGET=rg34xx\n' > "$TMP/release"
+apply /mnt/system/baseos.conf
+[ "$(cat "$TMP/run/baseos-config-target")" = /dev/mmcblk0p7 ] || fail "TF1 config device was not recorded"
 printf 'hostname=LastLine' > "$TMP/config"
 apply "$TMP/config"
 check_runtime LastLine true
