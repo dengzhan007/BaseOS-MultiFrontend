@@ -93,7 +93,6 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 reset_card() {
   rm -rf /mnt/sdcard
   mkdir -p /mnt/sdcard
-  ln -s /mnt/sdcard /mnt/SDCARD
   rm -f /tmp/*.log /tmp/no-card /tmp/gpu-ready-after /tmp/frontend-exit \
     "$EXPANSION_LOG" /run/boot-frontend-exec /run/usb-storage-device \
     /run/usb-storage-ready /run/usb-storage-failed
@@ -117,7 +116,8 @@ run_session
 [ "$(cat /tmp/frontend.log)" = script ] || fail "generic launch.sh was not selected"
 [ "$(cat /tmp/update.log)" = confirm ] || fail "system update was not confirmed before handoff"
 check_handoff
-grep -qx frontend-stdout /tmp/script.log 2>/dev/null && fail "frontend output unexpectedly entered a legacy log"
+grep -q frontend-stdout /tmp/compat.log || fail "frontend stdout was not captured in its RAM log"
+! grep -q frontend-stdout "$BOOT_LOG" || fail "frontend stdout leaked into the shared boot log"
 [ ! -e "$EXPANSION_LOG" ] && [ ! -e "$RAM_LOG" ] || fail "boot log spool was not flushed"
 echo "ok: generic root script launch and boot-log handoff"
 
@@ -186,7 +186,7 @@ echo "ok: respawn preserves the first timing record and exit status"
 reset_card
 : > /tmp/no-card
 run_session
-[ "$status" -eq 124 ] || [ "$status" -eq 143 ] || fail "empty-card session should wait for user input"
+[ "$status" -eq 1 ] || fail "empty-card session should return the no-card idle status"
 grep -q 'no card mounted' "$BOOT_LOG" || grep -q 'no frontend on card' "$BOOT_LOG" || fail "empty-card state was not logged"
 echo "frontend session tests passed"
 TEST
