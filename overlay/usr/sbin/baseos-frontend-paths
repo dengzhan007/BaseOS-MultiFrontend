@@ -215,12 +215,20 @@ scan_map() {
   sm_emus=
   [ -d "$sm_program/Emus" ] && sm_emus=Emus
   [ -d "$sm_program/emus" ] && sm_emus=emus
-  sm_spruce=
-  [ -d "$sm_program/spruce" ] && sm_spruce=spruce
+  sm_runtime=
+  for sm_candidate in "$sm_program"/*; do
+    [ -d "$sm_candidate/scripts" ] && [ -f "$sm_candidate/scripts/runtime.sh" ] || continue
+    sm_runtime=${sm_candidate##*/}
+    break
+  done
   sm_config=
-  # Slot stores favorites and recents in Config/*.txt. The alias points to
-  # this profile's private instance config while Saves/ remains shared.
-  [ -f "$sm_program/System/slot" ] && sm_config=Config
+  # A conventional Config/ directory is profile-private while Games/ and
+  # Saves/ remain shared, independent of the frontend package name.
+  if [ -d "$sm_program/Config" ]; then
+    sm_config=Config
+  elif [ -d "$sm_program/config" ]; then
+    sm_config=config
+  fi
   sm_saves=Saves
   [ -d "$sm_program/saves" ] && sm_saves=saves
   sm_bios=Bios
@@ -262,7 +270,7 @@ scan_map() {
     [ -z "$sm_system" ] || printf 'system_target=%s\n' "$sm_system"
     [ -z "$sm_tools" ] || printf 'tools_target=%s\n' "$sm_tools"
     [ -z "$sm_emus" ] || printf 'emus_target=%s\n' "$sm_emus"
-    [ -z "$sm_spruce" ] || printf 'spruce_target=%s\n' "$sm_spruce"
+    [ -z "$sm_runtime" ] || printf 'runtime_target=%s\n' "$sm_runtime"
     [ -z "$sm_config" ] || printf 'config_target=%s\n' "$sm_config"
     [ -z "$sm_cores" ] || printf 'cores_target=%s\n' "$sm_cores"
     printf '%s\n' '# BaseOS creates temporary card-root aliases from these paths while this frontend runs.'
@@ -461,8 +469,7 @@ find_shared_cores() {
     fi
   done
   if [ "$fsc_platform" = h700 ]; then
-    for fsc_dir in "$fsc_root/.baseos/shared/cores/slot-h700" \
-                   "$fsc_root/System/h700/cores" "$fsc_root/System"; do
+    for fsc_dir in "$fsc_root/System/h700/cores" "$fsc_root/System"; do
       [ -d "$fsc_dir" ] && [ ! -L "$fsc_dir" ] || continue
       if has_core_files "$fsc_dir"; then
         printf '%s' "$fsc_dir"
@@ -501,7 +508,7 @@ apply_map() {
   ap_system=$(read_map_value "$ap_map" system_target "")
   ap_tools=$(read_map_value "$ap_map" tools_target "")
   ap_emus=$(read_map_value "$ap_map" emus_target "")
-  ap_spruce=$(read_map_value "$ap_map" spruce_target "")
+  ap_spruce=$(read_map_value "$ap_map" runtime_target "")
   ap_cores=$(read_map_value "$ap_map" cores_target "")
   ap_userdata=$(read_map_value "$ap_map" userdata_target .userdata)
   ap_config=$(read_map_value "$ap_map" config_target "")
@@ -546,8 +553,8 @@ apply_map() {
   done
 
   add_alias "$ap_root" "$ap_games" "$ap_root/Games" "$ap_state"
-  # Games is canonical. When explicitly selected as the frontend-facing
-  # target, still expose common legacy spellings such as NextUI's Roms/.
+  # Games is canonical. Expose common legacy frontend-facing ROM directory
+  # spellings as temporary aliases without requiring frontend name detection.
   if [ "$ap_games" = Games ]; then
     add_alias "$ap_root" Roms "$ap_root/Games" "$ap_state"
     add_alias "$ap_root" ROMs "$ap_root/Games" "$ap_state"
@@ -564,8 +571,8 @@ apply_map() {
   [ -z "$ap_spruce" ] || add_alias "$ap_root" "$ap_spruce" "$ap_program/$ap_spruce" "$ap_state"
   if [ -n "$ap_config" ] && [ -n "$ap_instance" ]; then
     ap_frontend_config=$ap_instance/frontend-config
-    # Migrate a pre-multi-frontend Slot Config directory into the first
-    # selected profile once. Later profiles get a fresh private Config tree.
+    # Migrate a pre-multi-frontend Config directory into the first selected
+    # profile once. Later profiles get a fresh private Config tree.
     if [ ! -e "$ap_frontend_config" ] && [ -d "$ap_root/$ap_config" ] &&
        [ ! -L "$ap_root/$ap_config" ]; then
       mv "$ap_root/$ap_config" "$ap_frontend_config" || return 1
