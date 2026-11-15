@@ -34,7 +34,7 @@ chmod 0755 "$TMP/baseos-frontend-compat"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 compat_scan() {
-  BASEOS_DISCOVERY_LIB="$DISCOVERY" "$TMP/baseos-frontend-compat" scan "$TF2" "$TF1"
+  BASEOS_DISCOVERY_LIB="$DISCOVERY" BASEOS_COMPAT_TOOL="$TMP/baseos-frontend-compat" "$TMP/baseos-frontend-compat" scan "$TF2" "$TF1"
 }
 run_manager() {
   BASEOS_DISCOVERY_LIB="$DISCOVERY" \
@@ -68,7 +68,7 @@ grep -qx 'compat_api=1' "$SIDE/baseos-frontend.conf" || fail "compatibility API 
 mkdir -p "$TF1/Frontends/H700Slot/System" \
   "$TF1/Frontends/H700NextUI/.system/h700/paks/MinUI.pak" \
   "$TF1/Frontends/H700Spruce/spruce/scripts"
-printf 'immutable slot binary\\n' > "$TF1/Frontends/H700Slot/System/slot"
+printf '\\177ELF\\002\\001\\001\\000compat-binary-fixture' > "$TF1/Frontends/H700Slot/System/slot"
 printf '%s\\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/H700NextUI/.system/h700/paks/MinUI.pak/launch.sh"
 printf '%s\\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/H700Spruce/spruce/scripts/runtime.sh"
 cp "$TF1/Frontends/H700Slot/System/slot" "$TMP/slot.before"
@@ -80,15 +80,15 @@ SPRUCE_SIDE=$TF1/.baseos/compat/H700Spruce
 [ -f "$NEXTUI_SIDE/baseos-frontend.conf" ] || fail "NextUI H700 pak layout was not recognized"
 [ -f "$SPRUCE_SIDE/baseos-frontend.conf" ] || fail "spruce runtime layout was not recognized"
 grep -qx 'compat_entrypoint=System/slot' "$SLOT_SIDE/baseos-frontend.conf" || fail "Slot entrypoint metadata is wrong"
-grep -qx 'compat_mode=slot-binary' "$SLOT_SIDE/baseos-frontend.conf" || fail "Slot launch mode is wrong"
+grep -qx 'compat_mode=binary-card' "$SLOT_SIDE/baseos-frontend.conf" || fail "generic card-binary launch mode is wrong"
 grep -qx 'compat_entrypoint=.system/h700/paks/MinUI.pak/launch.sh' "$NEXTUI_SIDE/baseos-frontend.conf" || fail "NextUI entrypoint metadata is wrong"
-grep -qx 'compat_mode=nextui' "$NEXTUI_SIDE/baseos-frontend.conf" || fail "NextUI launch mode is wrong"
+grep -qx 'compat_mode=script-pak' "$NEXTUI_SIDE/baseos-frontend.conf" || fail "pak script launch mode is wrong"
 grep -qx 'compat_entrypoint=spruce/scripts/runtime.sh' "$SPRUCE_SIDE/baseos-frontend.conf" || fail "spruce entrypoint metadata is wrong"
-grep -qx 'compat_mode=spruce' "$SPRUCE_SIDE/baseos-frontend.conf" || fail "spruce launch mode is wrong"
-grep -F -q 'FAVORITES_PATH="$BASEOS_FAVORITES_DIR/pyui-favorites.json"' "$SPRUCE_SIDE/launch.sh" || fail "spruce favorites are not profile-private"
-grep -F -q 'RECENTS_PATH="$BASEOS_RECENTS_DIR/pyui-recents.json"' "$SPRUCE_SIDE/launch.sh" || fail "spruce recents are not profile-private"
-grep -F -q 'APPS_CONFIG_PATH="$BASEOS_CONFIG_DIR/pyui-apps.json"' "$SPRUCE_SIDE/launch.sh" || fail "spruce app config is not profile-private"
-grep -F -q 'COLLECTIONS_PATH="$BASEOS_CONFIG_DIR/collections/"' "$SPRUCE_SIDE/launch.sh" || fail "spruce collections are not profile-private"
+grep -qx 'compat_mode=script-runtime' "$SPRUCE_SIDE/baseos-frontend.conf" || fail "runtime script launch mode is wrong"
+grep -F -q 'FAVORITES_PATH="$BASEOS_FAVORITES_DIR/pyui-favorites.json"' "$HELPER" || fail "runtime adapter does not isolate favorites"
+grep -F -q 'RECENTS_PATH="$BASEOS_RECENTS_DIR/pyui-recents.json"' "$HELPER" || fail "runtime adapter does not isolate recents"
+grep -F -q 'APPS_CONFIG_PATH="$BASEOS_CONFIG_DIR/pyui-apps.json"' "$HELPER" || fail "runtime adapter does not isolate app configuration"
+grep -F -q 'COLLECTIONS_PATH="$BASEOS_CONFIG_DIR/collections/"' "$HELPER" || fail "runtime adapter does not isolate collections"
 sh -n "$SPRUCE_SIDE/launch.sh" || fail "spruce wrapper has invalid shell syntax"
 printf '%s\n' '#!/bin/sh' 'printf "%s\\n" "$PWD" "$FAVORITES_PATH" "$RECENTS_PATH" "$APPS_CONFIG_PATH" "$COLLECTIONS_PATH" "$STATE_PATH" "$ROMS_PATH" > "$COMPAT_TEST_RESULT"' > "$TF1/Frontends/H700Spruce/spruce/scripts/runtime.sh"
 BASEOS_CARD_ROOT=$TF1
@@ -106,7 +106,7 @@ export COMPAT_TEST_RESULT
 [ "$(sed -n '5p' "$COMPAT_TEST_RESULT")" = "$TMP/private/config/collections/" ] || fail "spruce collections path was not isolated"
 [ "$(sed -n '6p' "$COMPAT_TEST_RESULT")" = "$TMP/private/config/pyui-state.json" ] || fail "spruce state path was not isolated"
 [ "$(sed -n '7p' "$COMPAT_TEST_RESULT")" = "$TF1/Roms/" ] || fail "spruce ROM path does not use the shared Games alias"
-grep -F -q 'slot-binary)' "$SLOT_SIDE/launch.sh" || fail "Slot wrapper does not call the original binary"
+grep -F -q 'exec "$BASEOS_COMPAT_TOOL" launch' "$SLOT_SIDE/launch.sh" || fail "binary adapter does not delegate to the generic launcher"
 cmp -s "$TMP/slot.before" "$TF1/Frontends/H700Slot/System/slot" || fail "compat scan modified the original Slot binary"
 [ ! -e "$TF1/Frontends/H700Slot/baseos-frontend.conf" ] || fail "compat scan wrote metadata into original frontend folder"
 
