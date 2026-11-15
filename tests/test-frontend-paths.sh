@@ -169,4 +169,25 @@ sh "$HELPER" cleanup "$FALLBACK_CARD" || fail "exFAT fallback stale-alias cleanu
 [ -f "$FALLBACK_CARD/Games/FC/fallback.rom" ] || \
   fail "exFAT fallback cleanup modified canonical Games data"
 
+# Slot uses Config/favorites.txt and Config/recents.txt. BaseOS exposes
+# Config as a per-profile alias while keeping Games and Saves at card level.
+SLOT_PROGRAM=$CARD/Frontends/Slot
+SLOT_INSTANCE=$CARD/.baseos/instances/Slot--default
+SLOT_USERDATA=$SLOT_INSTANCE/userdata
+mkdir -p "$SLOT_PROGRAM/System" "$SLOT_INSTANCE/config" "$SLOT_USERDATA"
+: > "$SLOT_PROGRAM/System/slot"
+sh "$HELPER" scan "$CARD" Slot "$SLOT_PROGRAM" || fail "Slot profile path-map scan failed"
+SLOT_MAP=$CARD/.baseos/frontend-paths/Slot.conf
+grep -qx 'config_target=Config' "$SLOT_MAP" || fail "Slot Config target was not detected"
+sh "$HELPER" apply "$CARD" "$SLOT_PROGRAM" "$SLOT_MAP" "$SLOT_USERDATA" "$SLOT_INSTANCE" || \
+  fail "Slot per-profile Config mapping failed"
+[ -L "$CARD/Config" ] || fail "Slot Config was not redirected to the profile"
+[ "$(readlink "$CARD/Config")" = "$SLOT_INSTANCE/config" ] || fail "Slot Config does not point to profile config"
+[ -L "$CARD/.userdata" ] || fail "Slot userdata alias was not created"
+[ "$(readlink "$CARD/.userdata")" = "$SLOT_USERDATA" ] || fail "Slot userdata alias is not profile-private"
+sh "$HELPER" cleanup "$CARD" || fail "Slot per-profile path-map cleanup failed"
+[ ! -L "$CARD/Config" ] || fail "Slot Config alias survived cleanup"
+[ ! -L "$CARD/.userdata" ] || fail "Slot userdata alias survived cleanup"
+[ -f "$SLOT_PROGRAM/System/slot" ] || fail "Slot path-map modified the original program"
+
 echo "PASS: BaseOS path maps share frontend cores and preserve legacy ROM paths"
