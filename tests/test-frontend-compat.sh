@@ -64,6 +64,32 @@ SIDE=$TF1/.baseos/compat/NextUI
 grep -qx 'compat_api=1' "$SIDE/baseos-frontend.conf" || fail "compatibility API marker missing"
 [ ! -e "$TF1/Frontends/NextUI/baseos-frontend.conf" ] || fail "original frontend directory was modified"
 
+# H700 native layouts are automatically wrapped outside the frontend payload.
+mkdir -p "$TF1/Frontends/H700Slot/System" \
+  "$TF1/Frontends/H700NextUI/.system/h700/paks/MinUI.pak" \
+  "$TF1/Frontends/H700Spruce/spruce/scripts"
+printf 'immutable slot binary\\n' > "$TF1/Frontends/H700Slot/System/slot"
+printf '%s\\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/H700NextUI/.system/h700/paks/MinUI.pak/launch.sh"
+printf '%s\\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/H700Spruce/spruce/scripts/runtime.sh"
+cp "$TF1/Frontends/H700Slot/System/slot" "$TMP/slot.before"
+compat_scan
+SLOT_SIDE=$TF1/.baseos/compat/H700Slot
+NEXTUI_SIDE=$TF1/.baseos/compat/H700NextUI
+SPRUCE_SIDE=$TF1/.baseos/compat/H700Spruce
+[ -f "$SLOT_SIDE/baseos-frontend.conf" ] || fail "System/slot layout was not recognized"
+[ -f "$NEXTUI_SIDE/baseos-frontend.conf" ] || fail "NextUI H700 pak layout was not recognized"
+[ -f "$SPRUCE_SIDE/baseos-frontend.conf" ] || fail "spruce runtime layout was not recognized"
+grep -qx 'compat_entrypoint=System/slot' "$SLOT_SIDE/baseos-frontend.conf" || fail "Slot entrypoint metadata is wrong"
+grep -qx 'compat_mode=slot-binary' "$SLOT_SIDE/baseos-frontend.conf" || fail "Slot launch mode is wrong"
+grep -qx 'compat_entrypoint=.system/h700/paks/MinUI.pak/launch.sh' "$NEXTUI_SIDE/baseos-frontend.conf" || fail "NextUI entrypoint metadata is wrong"
+grep -qx 'compat_mode=nextui' "$NEXTUI_SIDE/baseos-frontend.conf" || fail "NextUI launch mode is wrong"
+grep -qx 'compat_entrypoint=spruce/scripts/runtime.sh' "$SPRUCE_SIDE/baseos-frontend.conf" || fail "spruce entrypoint metadata is wrong"
+grep -qx 'compat_mode=spruce' "$SPRUCE_SIDE/baseos-frontend.conf" || fail "spruce launch mode is wrong"
+grep -F -q 'slot-binary)' "$SLOT_SIDE/launch.sh" || fail "Slot wrapper does not call the original binary"
+grep -F -q 'generic-shell)' "$SLOT_SIDE/launch.sh" && fail "Slot wrapper has a wrong launch mode"
+cmp -s "$TMP/slot.before" "$TF1/Frontends/H700Slot/System/slot" || fail "compat scan modified the original Slot binary"
+[ ! -e "$TF1/Frontends/H700Slot/baseos-frontend.conf" ] || fail "compat scan wrote metadata into original frontend folder"
+
 COMPAT_TEST_RESULT=$TMP/launch-result
 export COMPAT_TEST_RESULT
 /bin/sh "$SIDE/launch.sh"
