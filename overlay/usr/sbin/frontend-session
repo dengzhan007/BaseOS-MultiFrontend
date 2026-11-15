@@ -381,7 +381,9 @@ if [ -z "$LAUNCH" ]; then
 		LAUNCH="$SD/.system/h700/paks/MinUI.pak/launch.sh"
 		FRONTEND=nextui
 	elif [ -f "$SD/spruce/scripts/runtime.sh" ]; then
-		LAUNCH="$SD/spruce/scripts/runtime.sh"
+		# spruceOS uses the conventional uppercase card-root alias throughout
+		# its runtime scripts; preserve that spelling in $0 as well.
+		LAUNCH="/mnt/SDCARD/spruce/scripts/runtime.sh"
 		FRONTEND=spruce
 	fi
 fi
