@@ -141,6 +141,9 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
             "$R/etc/init.d/rcS" "$R/etc/init.d/rcK" "$R/etc/init.d/dev" \
             "$R/usr/bin/baseos-splash" "$R/usr/bin/timedatectl" \
             "$R/usr/sbin/baseos-ntp" "$R/usr/sbin/baseos-ntp-notify" \
+            "$R/usr/sbin/baseos-frontend-discovery" "$R/usr/sbin/baseos-frontend-compat" \
+            "$R/usr/sbin/baseos-frontend-manager" "$R/usr/sbin/baseos-frontend-paths" \
+            "$R/usr/sbin/baseos-control-center" \
             "$R/usr/sbin/frontend-session" "$R/usr/sbin/systemctl" \
             "$R/usr/sbin/expand-storage" "$R/usr/sbin/baseos-update" \
             "$R/usr/sbin/boot-menu-held" "$R/usr/sbin/baseos-charger" \
@@ -158,6 +161,9 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   # Guard: every boot-critical script must be executable (a non-exec script is
   # skipped by its `[ -x ]` guard and fails silently — cost us one flash).
   for s in /init /etc/init.d/rcS /etc/init.d/rcK /usr/sbin/frontend-session \
+           /usr/sbin/baseos-frontend-discovery /usr/sbin/baseos-frontend-compat \
+           /usr/sbin/baseos-frontend-manager /usr/sbin/baseos-frontend-paths \
+           /usr/sbin/baseos-control-center \
            /usr/bin/baseos-splash /usr/bin/timedatectl \
            /usr/sbin/baseos-ntp /usr/sbin/baseos-ntp-notify \
            /usr/sbin/expand-storage /usr/sbin/baseos-update /usr/sbin/systemctl \
@@ -217,6 +223,8 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
     chmod 755 "$R/usr/bin/fbsplash"
     mkdir -p "$R/usr/share/baseos"
     cp /assets/boot.ttf "$R/usr/share/baseos/boot.ttf"
+    cp /tools/baseos-control-center "$R/usr/sbin/baseos-control-center"
+    chmod 755 "$R/usr/sbin/baseos-control-center"
     [ -f /assets/OFL.txt ] && cp /assets/OFL.txt "$R/usr/share/baseos/boot.ttf.OFL.txt"
   fi
   # gptgrow: first-boot expand-to-fill of the FAT data partition.
@@ -275,7 +283,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   find "$R/usr/bin" "$R/usr/sbin" "$R/usr/libexec" -type f | while read -r f; do
     head -c4 "$f" | grep -q "^.ELF" || continue
     case "$f" in
-      */busybox|*/dropbearmulti|*/curl|*/fbsplash|*/gptgrow|*/gptslot|*/ldconfig|*/ldconfig.real|*/rtk_hciattach|*/sftp-server|*/adbd|*/axp-off|*/charger-wait|*/avahi-daemon|*/boot-clock|*/native-health|*/baseos-regs|*/e2fsck) continue ;;
+      */busybox|*/dropbearmulti|*/curl|*/fbsplash|*/baseos-control-center|*/gptgrow|*/gptslot|*/ldconfig|*/ldconfig.real|*/rtk_hciattach|*/sftp-server|*/adbd|*/axp-off|*/charger-wait|*/avahi-daemon|*/boot-clock|*/native-health|*/baseos-regs|*/e2fsck) continue ;;
     esac
     if ! chroot "$R" /usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1 --list \
         "${f#"$R"}" 2>/dev/null | grep -q "=>"; then
