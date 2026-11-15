@@ -126,7 +126,7 @@ printf 'hostname=LastLine' > "$TMP/config"
 apply "$TMP/config"
 check_runtime LastLine true
 # Restore the RG34XX SP release fixture before default-hostname assertions.
-printf 'BASEOS_TARGET=RG34xxSP\\n' > "$TMP/release"
+printf 'BASEOS_TARGET=RG34xxSP\n' > "$TMP/release"
 
 name63="$(printf '%063d' 0 | tr 0 a)"
 printf 'hostname=%s\n' "$name63" > "$TMP/config"
