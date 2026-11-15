@@ -18,7 +18,7 @@ valid_id() {
 
 valid_target() {
   case "$1" in
-    Roms|ROMs|roms|Games|Saves|saves|Bios|BIOS|bios|Cheats|cheats|Overlays|overlays|Shaders|shaders|.system|SYSTEM|System|Tools|tools|Emus|emus|spruce|.userdata|userdata)
+    Roms|ROMs|roms|Games|Saves|saves|Bios|BIOS|bios|Cheats|cheats|Overlays|overlays|Shaders|shaders|Config|.system|SYSTEM|System|Tools|tools|Emus|emus|spruce|.userdata|userdata)
       return 0 ;;
     *) return 1 ;;
   esac
@@ -217,6 +217,10 @@ scan_map() {
   [ -d "$sm_program/emus" ] && sm_emus=emus
   sm_spruce=
   [ -d "$sm_program/spruce" ] && sm_spruce=spruce
+  sm_config=
+  # Slot stores favorites and recents in Config/*.txt. The alias points to
+  # this profile's private instance config while Saves/ remains shared.
+  [ -f "$sm_program/System/slot" ] && sm_config=Config
   sm_saves=Saves
   [ -d "$sm_program/saves" ] && sm_saves=saves
   sm_bios=Bios
@@ -261,6 +265,7 @@ scan_map() {
     [ -z "$sm_tools" ] || printf 'tools_target=%s\n' "$sm_tools"
     [ -z "$sm_emus" ] || printf 'emus_target=%s\n' "$sm_emus"
     [ -z "$sm_spruce" ] || printf 'spruce_target=%s\n' "$sm_spruce"
+    [ -z "$sm_config" ] || printf 'config_target=%s\n' "$sm_config"
     [ -z "$sm_cores" ] || printf 'cores_target=%s\n' "$sm_cores"
     printf '%s\n' '# BaseOS creates temporary card-root aliases from these paths while this frontend runs.'
     printf '%s\n' '# Edit target values to change the frontend-facing directory names; rescans preserve this file.'
@@ -479,6 +484,8 @@ apply_map() {
   ap_spruce=$(read_map_value "$ap_map" spruce_target "")
   ap_cores=$(read_map_value "$ap_map" cores_target "")
   ap_userdata=$(read_map_value "$ap_map" userdata_target .userdata)
+  ap_config=$(read_map_value "$ap_map" config_target "")
+  ap_instance=${5:-}
   case "$ap_share_bios" in yes|no) ;; *) echo "invalid share_bios value" >&2; rm -f "$ap_state"; return 1 ;; esac
   case "$ap_share_cheats" in yes|no) ;; *) echo "invalid share_cheats value" >&2; rm -f "$ap_state"; return 1 ;; esac
   case "$ap_share_overlays" in yes|no) ;; *) echo "invalid share_overlays value" >&2; rm -f "$ap_state"; return 1 ;; esac
@@ -510,7 +517,7 @@ apply_map() {
     rm -f "$ap_state"
     return 1
   }
-  for ap_name in "$ap_games" "$ap_saves" "$ap_bios" "$ap_cheats" "$ap_overlays" "$ap_shaders" "$ap_system" "$ap_tools" "$ap_emus" "$ap_spruce" "$ap_userdata"; do
+  for ap_name in "$ap_games" "$ap_saves" "$ap_bios" "$ap_cheats" "$ap_overlays" "$ap_shaders" "$ap_system" "$ap_tools" "$ap_emus" "$ap_spruce" "$ap_userdata" "$ap_config"; do
     [ -z "$ap_name" ] || valid_target "$ap_name" || {
       echo "invalid frontend path-map target: $ap_name" >&2
       rm -f "$ap_state"
@@ -535,6 +542,10 @@ apply_map() {
   [ -z "$ap_tools" ] || add_alias "$ap_root" "$ap_tools" "$ap_program/$ap_tools" "$ap_state"
   [ -z "$ap_emus" ] || add_alias "$ap_root" "$ap_emus" "$ap_program/$ap_emus" "$ap_state"
   [ -z "$ap_spruce" ] || add_alias "$ap_root" "$ap_spruce" "$ap_program/$ap_spruce" "$ap_state"
+  if [ -n "$ap_config" ] && [ -n "$ap_instance" ]; then
+    mkdir -p "$ap_instance/config" || return 1
+    add_alias "$ap_root" "$ap_config" "$ap_instance/config" "$ap_state"
+  fi
   [ -z "$ap_userdata" ] || [ -z "$4" ] || add_alias "$ap_root" "$ap_userdata" "$4" "$ap_state"
   if [ -n "$ap_cores" ]; then
     ap_core_platform=$(core_platform "$ap_cores" || :)
@@ -565,7 +576,7 @@ case "${1:-}" in
     scan_map "$2" "$3" "$4"
     ;;
   apply)
-    [ "$#" -ge 4 ] && [ "$#" -le 5 ] || { usage; exit 2; }
+    [ "$#" -ge 4 ] && [ "$#" -le 6 ] || { usage; exit 2; }
     apply_map "$2" "$3" "$4" "${5:-}"
     ;;
   cleanup)
