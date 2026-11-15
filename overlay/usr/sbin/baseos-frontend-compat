@@ -252,6 +252,7 @@ scan_root() {
     sr_entry_quote=$(shell_quote "$COMPAT_ENTRY")
     sr_mode_quote=$(shell_quote "$COMPAT_MODE")
     sr_tool_quote=$(shell_quote "${BASEOS_COMPAT_TOOL:-/usr/sbin/baseos-frontend-compat}")
+    sr_discovery_quote=$(shell_quote "${BASEOS_DISCOVERY_LIB:-/usr/sbin/baseos-frontend-discovery}")
     sr_stat=$(stat -c '%Y:%s' "$sr_dir/$COMPAT_ENTRY" 2>/dev/null || echo unknown)
     {
       printf '%s\n' 'package_api=1'
@@ -269,8 +270,9 @@ scan_root() {
       printf 'BASEOS_COMPAT_ENTRYPOINT=%s\n' "$sr_entry_quote"
       printf 'BASEOS_COMPAT_MODE=%s\n' "$sr_mode_quote"
       printf 'BASEOS_COMPAT_TOOL=%s\n' "$sr_tool_quote"
+      printf 'BASEOS_DISCOVERY_LIB=%s\n' "$sr_discovery_quote"
       printf '%s\n' 'export BASEOS_COMPAT_PROGRAM_DIR'
-      printf '%s\n' 'export BASEOS_COMPAT_TOOL'
+      printf '%s\n' 'export BASEOS_COMPAT_TOOL BASEOS_DISCOVERY_LIB'
       printf 'cd "$BASEOS_COMPAT_PROGRAM_DIR"\n'
       printf '%s\n' 'exec "$BASEOS_COMPAT_TOOL" launch "$BASEOS_COMPAT_PROGRAM_DIR" "$BASEOS_COMPAT_ENTRYPOINT" "$BASEOS_COMPAT_MODE"'
     } | write_if_changed "$sr_sidecar/launch.sh"
