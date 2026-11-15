@@ -14,7 +14,6 @@ SD=/mnt/sdcard
 # rcS applies TF1's settings before init starts and keeps the non-secret values
 # in RAM for this session, even when TF2 is the mounted frontend card.
 BASEOS_FRONTEND_CONFIG=${BASEOS_FRONTEND_CONFIG:-/run/baseos.conf}
-export BASEOS_FRONTEND_CONFIG
 . /usr/share/baseos/boot-log.sh
 select_boot_log
 INSTALL_FAILED=0
@@ -181,10 +180,11 @@ if [ ! -e /run/baseos-frontend-selector-boot-checked ]; then
 		rm -f /run/baseos-frontend-select.boot-request
 		log "boot selector requested by L1/R1"
 		: > /run/baseos-frontend-selector-shown
+		BASEOS_FRONTEND_CONFIG="$BASEOS_FRONTEND_CONFIG" \
 		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
 			/usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1 || :
 		rm -f /run/baseos-frontend-selection
-		/usr/sbin/baseos-control-center --selector >/dev/null 2>&1 || \
+		BASEOS_FRONTEND_CONFIG="$BASEOS_FRONTEND_CONFIG" /usr/sbin/baseos-control-center --selector >/dev/null 2>&1 || \
 			log "frontend selector UI returned an error"
 		if [ -s /run/baseos-frontend-selection ]; then
 			read -r FRONTEND_PREFERENCE < /run/baseos-frontend-selection || FRONTEND_PREFERENCE=auto
@@ -197,7 +197,8 @@ if [ ! -e /run/baseos-frontend-selector-boot-checked ]; then
 fi
 # Compatibility wrappers are BaseOS sidecars; no frontend files are rewritten.
 if [ -x /usr/sbin/baseos-frontend-manager ] &&
-   BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
+   BASEOS_FRONTEND_CONFIG="$BASEOS_FRONTEND_CONFIG" \
+		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
      /usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1; then
 	FRONTEND_CATALOG=/run/baseos-frontend-catalog
 	if [ -s "$FRONTEND_CATALOG" ]; then
@@ -460,9 +461,10 @@ if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 	fi
 	log "frontend $SELECTED exited with status $frontend_status; returning to diagnostics"
 	if [ -x /usr/sbin/baseos-control-center ]; then
+		BASEOS_FRONTEND_CONFIG="$BASEOS_FRONTEND_CONFIG" \
 		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
 			/usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1 || :
-		/usr/sbin/baseos-control-center --diagnostics >/dev/null 2>&1 || :
+		BASEOS_FRONTEND_CONFIG="$BASEOS_FRONTEND_CONFIG" /usr/sbin/baseos-control-center --diagnostics >/dev/null 2>&1 || :
 		# Let the user leave the diagnostics screen before init respawns the UI.
 		sleep 3
 	fi
@@ -475,9 +477,10 @@ if [ "$CARD_MISSING" -eq 0 ] && [ "$INSTALL_FAILED" -eq 0 ] &&
    [ ! -e /run/baseos-frontend-selector-shown ] &&
    [ -x /usr/sbin/baseos-control-center ]; then
 	: > /run/baseos-frontend-selector-shown
-	BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
+	BASEOS_FRONTEND_CONFIG="$BASEOS_FRONTEND_CONFIG" \
+		BASEOS_FRONTEND_TF1=$SD BASEOS_FRONTEND_TF2=$SD \
 		/usr/sbin/baseos-frontend-manager catalog >/dev/null 2>&1 || :
-	/usr/sbin/baseos-control-center --selector >/dev/null 2>&1 || :
+	BASEOS_FRONTEND_CONFIG="$BASEOS_FRONTEND_CONFIG" /usr/sbin/baseos-control-center --selector >/dev/null 2>&1 || :
 fi
 if [ "$CARD_MISSING" -eq 1 ]; then
 	log "no card mounted — waiting for insertion"
