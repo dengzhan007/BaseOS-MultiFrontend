@@ -53,46 +53,60 @@ write_if_changed() {
   fi
 }
 
+is_elf_file() {
+  elf_magic=$(od -An -N4 -tx1 "$1" 2>/dev/null | tr -d ' \\n')
+  [ "$elf_magic" = 7f454c46 ]
+}
+
+# Discover by directory structure and launch contract, never frontend name.
 resolve_entrypoint() {
   re_dir=$1
   COMPAT_ENTRY=
   COMPAT_MODE=
-  for re_name in launch.sh start.sh run.sh frontend.sh; do
+
+  for re_name in launch.sh start.sh run.sh frontend.sh .tmp_update/updater .tmp_update/launch.sh; do
     if [ -f "$re_dir/$re_name" ] && [ ! -L "$re_dir/$re_name" ]; then
       COMPAT_ENTRY=$re_name
-      COMPAT_MODE=sh
+      COMPAT_MODE=script-package
       return 0
     fi
   done
-  for re_name in .tmp_update/updater .tmp_update/launch.sh; do
-    if [ -f "$re_dir/$re_name" ] && [ ! -L "$re_dir/$re_name" ]; then
-      COMPAT_ENTRY=$re_name
-      COMPAT_MODE=sh
+
+  for re_path in "$re_dir"/.system/h700/paks/*.pak/launch.sh; do
+    [ -f "$re_path" ] && [ ! -L "$re_path" ] || continue
+    COMPAT_ENTRY=${re_path#"$re_dir"/}
+    COMPAT_MODE=script-pak
+    return 0
+  done
+
+  for re_path in "$re_dir"/*/scripts/runtime.sh; do
+    [ -f "$re_path" ] && [ ! -L "$re_path" ] || continue
+    COMPAT_ENTRY=${re_path#"$re_dir"/}
+    COMPAT_MODE=script-runtime
+    return 0
+  done
+
+  if [ -f "$re_dir/System/launch_frontend.sh" ] &&
+     [ ! -L "$re_dir/System/launch_frontend.sh" ]; then
+    COMPAT_ENTRY=System/launch_frontend.sh
+    COMPAT_MODE=script-card
+    return 0
+  fi
+
+  for re_path in "$re_dir"/System/*; do
+    [ -f "$re_path" ] && [ ! -L "$re_path" ] || continue
+    if is_elf_file "$re_path"; then
+      COMPAT_ENTRY=${re_path#"$re_dir"/}
+      COMPAT_MODE=binary-card
       return 0
     fi
   done
-  # Recognised H700 frontend archive layouts; original payloads stay untouched.
-  if [ -f "$re_dir/System/slot" ] && [ ! -L "$re_dir/System/slot" ]; then
-    COMPAT_ENTRY=System/slot; COMPAT_MODE=slot-binary; return 0
-  fi
-  if [ -f "$re_dir/System/frontend" ] && [ ! -L "$re_dir/System/frontend" ]; then
-    COMPAT_ENTRY=System/frontend; COMPAT_MODE=generic-binary; return 0
-  fi
-  if [ -f "$re_dir/System/launch_frontend.sh" ] && [ ! -L "$re_dir/System/launch_frontend.sh" ]; then
-    COMPAT_ENTRY=System/launch_frontend.sh; COMPAT_MODE=generic-shell; return 0
-  fi
-  if [ -f "$re_dir/.system/h700/paks/MinUI.pak/launch.sh" ] && [ ! -L "$re_dir/.system/h700/paks/MinUI.pak/launch.sh" ]; then
-    COMPAT_ENTRY=.system/h700/paks/MinUI.pak/launch.sh; COMPAT_MODE=nextui; return 0
-  fi
-  if [ -f "$re_dir/spruce/scripts/runtime.sh" ] && [ ! -L "$re_dir/spruce/scripts/runtime.sh" ]; then
-    COMPAT_ENTRY=spruce/scripts/runtime.sh; COMPAT_MODE=spruce; return 0
-  fi
-  re_base=$(basename "$re_dir")
-  re_slug=$(printf '%s' "$re_base" | LC_ALL=C tr 'A-Z' 'a-z')
-  for re_name in "$re_base.elf" "$re_slug.elf" frontend.elf; do
-    if [ -f "$re_dir/$re_name" ] && [ ! -L "$re_dir/$re_name" ]; then
-      COMPAT_ENTRY=$re_name
-      COMPAT_MODE=exec
+
+  for re_path in "$re_dir"/*.elf; do
+    [ -f "$re_path" ] && [ ! -L "$re_path" ] || continue
+    if is_elf_file "$re_path"; then
+      COMPAT_ENTRY=${re_path#"$re_dir"/}
+      COMPAT_MODE=binary-package
       return 0
     fi
   done
@@ -105,7 +119,7 @@ compat_needs_scan() {
   [ -f "$cns_state" ] && [ ! -L "$cns_state" ] || return 0
   # Force one rescan after upgrading from the earlier scanner contract. This
   # discovers H700-specific entrypoints without relying on directory mtimes.
-  [ "$(cat "$cns_state" 2>/dev/null)" = "frontend-compat-api=2" ] || return 0
+  [ "$(cat "$cns_state" 2>/dev/null)" = "frontend-compat-api=3" ] || return 0
   if [ -d "$cns_root/Frontends" ]; then
     [ "$cns_root/Frontends" -nt "$cns_state" ] && return 0
     for cns_dir in "$cns_root"/Frontends/*; do
@@ -127,8 +141,7 @@ compat_needs_scan() {
     [ -n "$cns_source" ] && [ -n "$cns_entry" ] || return 0
     case "$cns_source" in ''|.|..|*/*|*'|'*) return 0 ;; esac
     case "$cns_entry" in
-      launch.sh|start.sh|run.sh|frontend.sh|.tmp_update/updater|.tmp_update/launch.sh|frontend.elf|*.elf|System/slot|System/frontend|System/launch_frontend.sh|.system/h700/paks/MinUI.pak/launch.sh|spruce/scripts/runtime.sh) ;;
-      *) return 0 ;;
+      ''|/*|*'..'*|*'|'*|*[!A-Za-z0-9._/-]*) return 0 ;;
     esac
     [ -f "$cns_root/Frontends/$cns_source/$cns_entry" ] || return 0
     baseos_frontend_read_value "$cns_manifest" compat_entrypoint_stat ""
@@ -200,25 +213,24 @@ scan_root() {
       printf 'BASEOS_COMPAT_MODE=%s\n' "$sr_mode_quote"
       printf '%s\n' 'export BASEOS_COMPAT_PROGRAM_DIR'
       printf 'cd "$BASEOS_COMPAT_PROGRAM_DIR"\n'
-      printf '%s\n' 'case "$BASEOS_COMPAT_MODE" in'
-      printf '%s\n' '  sh) cd "$BASEOS_COMPAT_PROGRAM_DIR"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  exec) exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  slot-binary) SLOT_ROOT=${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}; export SLOT_ROOT; cd "$SLOT_ROOT"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  generic-binary) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  generic-shell) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  nextui) cd "$BASEOS_COMPAT_PROGRAM_DIR"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  spruce) \
-    export ROMS_PATH="${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}/Roms/" \
-           FAVORITES_PATH="$BASEOS_FAVORITES_DIR/pyui-favorites.json" \
-           RECENTS_PATH="$BASEOS_RECENTS_DIR/pyui-recents.json" \
-           APPS_CONFIG_PATH="$BASEOS_CONFIG_DIR/pyui-apps.json" \
-           COLLECTIONS_PATH="$BASEOS_CONFIG_DIR/collections/" \
-           STATE_PATH="$BASEOS_CONFIG_DIR/pyui-state.json"; \
-    mkdir -p "$BASEOS_CONFIG_DIR/collections"; \
-    cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; \
+      printf '%s\\n' 'case "$BASEOS_COMPAT_MODE" in'
+      printf '%s\\n' '  script-package) cd "$BASEOS_COMPAT_PROGRAM_DIR"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
+      printf '%s\\n' '  script-pak) entry="$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT"; cd "${entry%/*}"; exec /bin/sh "$entry" ;;'
+      printf '%s\\n' '  script-card) cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
+      printf '%s\\n' '  script-runtime) \\
+    export ROMS_PATH="${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}/Roms/" \\
+           FAVORITES_PATH="$BASEOS_FAVORITES_DIR/pyui-favorites.json" \\
+           RECENTS_PATH="$BASEOS_RECENTS_DIR/pyui-recents.json" \\
+           APPS_CONFIG_PATH="$BASEOS_CONFIG_DIR/pyui-apps.json" \\
+           COLLECTIONS_PATH="$BASEOS_CONFIG_DIR/collections/" \\
+           STATE_PATH="$BASEOS_CONFIG_DIR/pyui-state.json"; \\
+    mkdir -p "$BASEOS_CONFIG_DIR/collections"; \\
+    cd "${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}"; \\
     exec /bin/sh "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
-      printf '%s\n' '  *) echo "unsupported compatibility launch mode" >&2; exit 126 ;;'
-      printf '%s\n' 'esac'
+      printf '%s\\n' '  binary-card) SLOT_ROOT=${BASEOS_CARD_ROOT:-$BASEOS_COMPAT_PROGRAM_DIR}; export SLOT_ROOT; cd "$SLOT_ROOT"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
+      printf '%s\\n' '  binary-package) cd "$BASEOS_COMPAT_PROGRAM_DIR"; exec /lib/ld-linux-aarch64.so.1 "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ;;'
+      printf '%s\\n' '  *) echo "unsupported compatibility launch mode" >&2; exit 126 ;;'
+      printf '%s\\n' 'esac'
     } | write_if_changed "$sr_sidecar/launch.sh"
     {
       printf '%s\n' 'profile_api=1'
