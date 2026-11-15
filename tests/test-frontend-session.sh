@@ -168,7 +168,11 @@ generic_card() {
 }
 run_session() {
 	status=0
-	timeout 5 sh /usr/sbin/frontend-session > /tmp/console.log 2>&1 || status=$?
+	timeout 5 sh -x /usr/sbin/frontend-session > /tmp/console.log 2>&1 || status=$?
+	if [ "$status" -ne 0 ]; then
+		echo "frontend-session returned $status; console follows:" >&2
+		cat /tmp/console.log >&2
+	fi
 }
 no_legacy_logs() {
 	[ ! -e /tmp/nextui-session.log ] \
