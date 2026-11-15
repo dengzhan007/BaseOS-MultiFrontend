@@ -37,7 +37,9 @@ append_legacy_adapters() {
       [ "$BASEOS_ADAPTER_ID" = "$legacy_id" ] || continue
       legacy_status=enabled
       [ ! -e "$legacy_root/.baseos/frontends-disabled/$legacy_id" ] || legacy_status=disabled
-      grep -F -q "$legacy_id|" "$catalog_tmp" && continue
+      if awk -F '|' -v id="$legacy_id" '$1 == id { found=1; exit } END { exit !found }' "$catalog_tmp"; then
+        continue
+      fi
       if [ -f "$legacy_dir/manifest.conf" ]; then
         legacy_config=$legacy_dir/manifest.conf
       else
@@ -114,7 +116,9 @@ build_catalog() {
             [ "$catalog_parent" = "$catalog_root/Frontends" ] || continue
           fi
           catalog_id=$BASEOS_ADAPTER_ID
-          if grep -F -q "$catalog_id|" "$catalog_tmp"; then continue; fi
+          if awk -F '|' -v id="$catalog_id" '$1 == id { found=1; exit } END { exit !found }' "$catalog_tmp"; then
+            continue
+          fi
           catalog_status=enabled
           if [ "$catalog_kind" = compat ] &&
              [ -e "$catalog_root/.baseos/compat-disabled/$BASEOS_PACKAGE_ID" ]; then
