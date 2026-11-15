@@ -544,7 +544,7 @@ apply_map() {
   [ -z "$ap_spruce" ] || add_alias "$ap_root" "$ap_spruce" "$ap_program/$ap_spruce" "$ap_state"
   if [ -n "$ap_config" ] && [ -n "$ap_instance" ]; then
     mkdir -p "$ap_instance/config" || return 1
-    add_alias "$ap_root" "$ap_config" "$ap_instance/config" "$ap_state"
+    add_alias "$ap_root" "$ap_config" "$ap_instance/frontend-config" "$ap_state"
   fi
   [ -z "$ap_userdata" ] || [ -z "$4" ] || add_alias "$ap_root" "$ap_userdata" "$4" "$ap_state"
   if [ -n "$ap_cores" ]; then
