@@ -70,7 +70,8 @@ generate_catalog_path_maps() {
         ;;
       compat)
         gpm_card=$gpm_root
-        baseos_frontend_read_value "$gpm_dir/baseos-frontend.conf" compat_source ""
+        gpm_manifest=$gpm_card/.baseos/compat/$gpm_package/baseos-frontend.conf
+        baseos_frontend_read_value "$gpm_manifest" compat_source ""
         gpm_source=$BASEOS_VALUE
         case "$gpm_source" in ''|.|..|*/*|*'|'*) continue ;; esac
         gpm_program=$gpm_card/Frontends/$gpm_source
