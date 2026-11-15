@@ -36,7 +36,7 @@ EOF
 chmod 755 "$TMP/bin/mkpasswd"
 
 reset_runtime() { rm -f "$TMP/run"/*; : > "$TMP/events"; }
-apply() { reset_runtime; sh -x "$SCRIPT" "$@"; }
+apply() { reset_runtime; sh "$SCRIPT" "$@"; }
 check_runtime() {
 	[ "$(cat "$TMP/run/hostname")" = "$1" ] || fail "runtime hostname: $1"
 	printf '127.0.0.1 localhost %s\n::1 localhost\n' "$1" > "$TMP/want"
@@ -125,6 +125,8 @@ apply /mnt/system/baseos.conf
 printf 'hostname=LastLine' > "$TMP/config"
 apply "$TMP/config"
 check_runtime LastLine true
+# Restore the RG34XX SP release fixture before default-hostname assertions.
+printf 'BASEOS_TARGET=RG34xxSP\\n' > "$TMP/release"
 
 name63="$(printf '%063d' 0 | tr 0 a)"
 printf 'hostname=%s\n' "$name63" > "$TMP/config"
