@@ -251,6 +251,7 @@ EOF
 						# Catalog rows carry the untouched source folder for removal
 						# safety. Its BaseOS manifest and launch wrapper live separately.
 						FRONTEND_MANIFEST_DIR=$FRONTEND_CATALOG_ROOT/.baseos/compat/$FRONTEND_PACKAGE_ID
+						LAUNCH=$FRONTEND_MANIFEST_DIR/launch.sh
 					fi
 					if baseos_frontend_load_package "$FRONTEND_CATALOG_ROOT" \
 						"$FRONTEND_MANIFEST_DIR" "$FRONTEND_PROFILE_DEFAULTS"; then
@@ -387,15 +388,19 @@ if [ "$CARD_MISSING" -eq 0 ] && [ -f "$LAUNCH" ]; then
 	done
 	# A plain name for the log: the pak's name (MinUI for NextUI's MinUI.pak),
 	# else the frontend's own.
-	case "$LAUNCH" in
-		*/*.pak/*) frontend_name=${LAUNCH%.pak/*} frontend_name=${frontend_name##*/} ;;
+	if [ "$FRONTEND_CATALOG_SELECTED" = yes ]; then
+		frontend_name=$FRONTEND_NAME
+	else
+		case "$LAUNCH" in
+			*/*.pak/*) frontend_name=${LAUNCH%.pak/*} frontend_name=${frontend_name##*/} ;;
 		*)
 			case "$FRONTEND" in
 				slot) frontend_name=Slot ;;
 				spruce) frontend_name=spruceOS ;;
 				*) frontend_name="custom frontend" ;;
 			esac ;;
-	esac
+		esac
+	fi
 	gpu_wait=
 	[ "$m" -eq 0 ] || gpu_wait=", after $((m / 10)).$((m % 10)) s waiting for the GPU"
 	# Keep the first handoff across respawns and record it in the readable log.
