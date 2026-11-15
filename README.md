@@ -52,10 +52,11 @@ says which startup ran and why.
 
 BaseOS can manage several frontends without patching their source or payload.
 For the multi-frontend selector, put each complete, already-installed frontend
-tree in its own `Frontends/<name>/` directory, preserving hidden folders and
-the original entry point. BaseOS writes compatibility metadata under
+tree in its own `Frontends/<id>/` directory, preserving hidden folders and the
+original entry point. The directory ID is user-chosen and does not need to
+match a known frontend name. BaseOS writes compatibility metadata under
 `.baseos/compat/`, outside the frontend tree. Existing card-root installs
-remain supported as the legacy single-frontend path.
+remain supported through the same structure-based adapter resolver.
 
 Hold **L1 or R1** (either one; not both) while powering on to open the selector.
 **MENU** retains priority for USB Mass Storage maintenance. The selector can
@@ -68,17 +69,18 @@ recents, settings and save states are profile-private. See the
 package layout, compatibility rules and validation.
 
 - **NextUI:** [official v6.15.0 and later](https://github.com/LoveRetro/NextUI/releases/latest)
-  support H700 natively. Extract the `-base.zip` or `-all.zip` archive and copy
-  its contents to your frontend card's root for a traditional single-frontend
-  install. For multi-frontend use, place the complete installed tree under
-  `Frontends/NextUI/`, including the hidden `.system/` directory. Keep
-  `MinUI.zip` zipped during the normal install step. You don't need a separate
-  H700 fork or the stock-OS `dmenu.bin` setup. [NextUI installation guide](https://nextui.loveretro.games/getting-started/installation/).
+  support H700 natively. Extract the `-base.zip` or `-all.zip` archive before
+  placing it on the card. For multi-frontend use, put the complete installed
+  tree under `Frontends/NextUI/`, including the hidden `.system/` directory.
+  BaseOS does not run vendor-specific archive updaters during boot. You don't
+  need a separate H700 fork or the stock-OS `dmenu.bin` setup.
+  [NextUI installation guide](https://nextui.loveretro.games/getting-started/installation/).
 - **Slot:** extract its [H700 release](https://github.com/BrandonKowalski/slot/releases/latest)
   and copy the contents of `slot-<version>` to the card root, including the
   complete `System/` folder. For multi-frontend use, keep that complete tree
-  under `Frontends/Slot/`; BaseOS detects `System/slot` without changing it.
-  Put unzipped games in `Games/GB/`, `Games/GBC/` or `Games/GBA/`, and
+  under `Frontends/Slot/`. The compatibility layer detects the AArch64 ELF
+  payload by file signature, without relying on its filename. Put unzipped
+  games in `Games/GB/`, `Games/GBC/` or `Games/GBA/`, and
   optional BIOS files in `BIOS/`. Update by replacing `System/` with the
   folder from the new release. [Slot guide](https://slot-cfw.fyi).
   For RetroAchievements, cheats and a few extra goodies, try
@@ -88,15 +90,18 @@ package layout, compatibility rules and validation.
 - **spruceOS:** extract the full [release archive](https://github.com/spruceUI/spruceOS/releases/latest)
   and copy all contents, including hidden folders, to the card root for a
   traditional single-frontend setup. For multi-frontend use, place the complete
-  tree under `Frontends/spruceOS/`; BaseOS detects
-  `spruce/scripts/runtime.sh` and supplies the original card-root aliases.
+  tree under `Frontends/spruceOS/`; the structure-based adapter recognises
+  the generic `*/scripts/runtime.sh` entrypoint pattern and supplies
+  card-root path aliases.
   The
   [spruceOS Installer](https://github.com/spruceUI/spruceOS-Installer/releases/latest)
   can set up a separate TF2 card; skip its TF1 image step if BaseOS is already
   installed. [spruceOS installation guide](https://github.com/spruceUI/spruceOS/wiki/01.-Installation-Instructions).
-- **Your own frontend:** add `System/launch_frontend.sh` or a glibc AArch64
-  binary at `System/frontend`. The binary takes priority. Scripts run through
-  `/bin/sh`. Both run from the card root and need no executable bit.
+- **Your own frontend:** BaseOS first accepts standard package-root scripts
+  such as `launch.sh`, then recognises structural layouts such as any
+  `.system/h700/paks/<package>.pak/launch.sh`, `*/scripts/runtime.sh`, and
+  AArch64 ELF payloads under `System/`. No product name or binary basename
+  is required. Scripts run through `/bin/sh`; ELF files use the system loader.
 
 ## Settings
 
