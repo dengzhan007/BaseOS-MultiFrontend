@@ -50,6 +50,7 @@ jobs:
           sh ./tests/test-frontend-session.sh
           sh ./tests/test-baseos-config.sh
           sh ./tests/test-boot-menu-held.sh
+          sh ./tests/test-control-center-input.sh
 
       - name: Restore prepared RG34XX inputs
         run: sh ./fetch-prepared.sh rg34xx

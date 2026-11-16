@@ -136,6 +136,7 @@ run_session
 [ "$(cat /tmp/frontend.log)" = script ] || fail "generic launch.sh was not selected"
 [ "$(cat /tmp/update.log)" = confirm ] || fail "system update was not confirmed before handoff"
 check_handoff
+[ -d /mnt/sdcard/Frontends ] || fail "Frontends directory was not created on the mounted card"
 grep -q frontend-stdout /tmp/compat.log || fail "frontend stdout was not captured in its RAM log"
 ! grep -q frontend-stdout "$BOOT_LOG" || fail "frontend stdout leaked into the shared boot log"
 [ ! -e "$EXPANSION_LOG" ] && [ ! -e "$RAM_LOG" ] || fail "boot log spool was not flushed"
@@ -210,5 +211,6 @@ reset_card
 run_session
 [ "$status" -eq 1 ] || fail "empty-card session should return the no-card idle status"
 grep -q 'no card mounted' "$RAM_LOG" || grep -q 'no frontend on card' "$RAM_LOG" || fail "empty-card state was not logged in the RAM fallback log"
+[ ! -e /mnt/sdcard/Frontends ] || fail "Frontends directory was created without a mounted card"
 echo "frontend session tests passed"
 TEST

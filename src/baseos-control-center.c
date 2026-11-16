@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include "baseos-control-center-input.h"
 
 #define MAX_INPUTS 24
 #define MAX_ENTRIES 64
@@ -40,14 +41,16 @@ typedef struct {
     int priority;
 } Frontend;
 
-typedef struct { int fd; } Input;
+typedef struct { int fd; BaseOSInputState state; } Input;
 
 static Frontend entries[MAX_ENTRIES];
 static Input inputs[MAX_INPUTS];
 static int entry_count, input_count, selected, offset;
 static int fb_fd = -1;
 static uint8_t *fb_mem;
+static uint8_t *fb_canvas;
 static size_t fb_size;
+static size_t fb_frame_size;
 static struct fb_var_screeninfo fb_var;
 static struct fb_fix_screeninfo fb_fix;
 static FT_Library ft_lib;
@@ -80,23 +83,42 @@ static int open_inputs(void)
         char path[FIELD];
         unsigned long keybits[(KEY_MAX + 8 * sizeof(unsigned long)) /
                               (8 * sizeof(unsigned long))];
-        int fd;
+        unsigned long absbits[(ABS_MAX + 8 * sizeof(unsigned long)) /
+                              (8 * sizeof(unsigned long))];
+        int fd, has_key_input, has_hat_input;
         if (strncmp(de->d_name, "event", 5) != 0) continue;
         if (snprintf(path, sizeof(path), "/dev/input/%s", de->d_name) >=
             (int)sizeof(path)) continue;
         fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd < 0) continue;
         memset(keybits, 0, sizeof(keybits));
-        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) < 0 ||
-            !(bit_set(keybits, BTN_SOUTH) || bit_set(keybits, BTN_EAST) ||
-              bit_set(keybits, BTN_START) || bit_set(keybits, BTN_SELECT) ||
-              bit_set(keybits, BTN_TL) || bit_set(keybits, BTN_TR) ||
-              bit_set(keybits, KEY_UP) || bit_set(keybits, KEY_DOWN) ||
-              bit_set(keybits, BTN_DPAD_UP) || bit_set(keybits, BTN_DPAD_DOWN))) {
+        memset(absbits, 0, sizeof(absbits));
+        has_key_input = ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) >= 0 &&
+            (bit_set(keybits, BTN_SOUTH) || bit_set(keybits, BTN_EAST) ||
+             bit_set(keybits, BTN_WEST) || bit_set(keybits, BTN_NORTH) ||
+             bit_set(keybits, BTN_START) || bit_set(keybits, BTN_SELECT) ||
+             bit_set(keybits, BTN_TL) || bit_set(keybits, BTN_TR) ||
+             bit_set(keybits, KEY_UP) || bit_set(keybits, KEY_DOWN) ||
+             bit_set(keybits, KEY_LEFT) || bit_set(keybits, KEY_RIGHT) ||
+             bit_set(keybits, BTN_DPAD_UP) || bit_set(keybits, BTN_DPAD_DOWN) ||
+             bit_set(keybits, BTN_DPAD_LEFT) || bit_set(keybits, BTN_DPAD_RIGHT));
+        has_hat_input = ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), absbits) >= 0 &&
+            (bit_set(absbits, ABS_HAT0X) || bit_set(absbits, ABS_HAT0Y));
+        if (!has_key_input && !has_hat_input) {
             close(fd);
             continue;
         }
-        inputs[input_count++].fd = fd;
+        Input *input = &inputs[input_count++];
+        input->fd = fd;
+        input->state.hat_x = 0;
+        input->state.hat_y = 0;
+        struct input_absinfo absinfo;
+        if (bit_set(absbits, ABS_HAT0X) &&
+            ioctl(fd, EVIOCGABS(ABS_HAT0X), &absinfo) == 0)
+            input->state.hat_x = absinfo.value;
+        if (bit_set(absbits, ABS_HAT0Y) &&
+            ioctl(fd, EVIOCGABS(ABS_HAT0Y), &absinfo) == 0)
+            input->state.hat_y = absinfo.value;
     }
     closedir(dir);
     return input_count;
@@ -151,7 +173,7 @@ static void put_pixel(int x, int y, uint32_t p)
         x >= (int)fb_var.xres || y >= (int)fb_var.yres) return;
     unsigned bytes = fb_var.bits_per_pixel / 8;
     if (bytes < 2 || bytes > 4) return;
-    uint8_t *dst = fb_mem + (size_t)y * fb_fix.line_length + (size_t)x * bytes;
+    uint8_t *dst = fb_canvas + (size_t)y * fb_fix.line_length + (size_t)x * bytes;
     if (bytes == 2) *(uint16_t *)dst = (uint16_t)p;
     else if (bytes == 3) { dst[0] = p; dst[1] = p >> 8; dst[2] = p >> 16; }
     else *(uint32_t *)dst = p;
@@ -188,7 +210,7 @@ static void draw_text(int x, int baseline, const char *s, int px, uint32_t fg)
                 if (xx < 0 || yy < 0 || xx >= (int)fb_var.xres ||
                     yy >= (int)fb_var.yres) continue;
                 /* Alpha blend in the native channel format. */
-                uint8_t *src = fb_mem + (size_t)yy * fb_fix.line_length +
+                uint8_t *src = fb_canvas + (size_t)yy * fb_fix.line_length +
                                (size_t)xx * (fb_var.bits_per_pixel / 8);
                 uint32_t under = 0;
                 unsigned bytes = fb_var.bits_per_pixel / 8;
@@ -359,8 +381,12 @@ static int framebuffer_open(void)
         fb_var.bits_per_pixel != 32) return -1;
     fb_size = fb_fix.smem_len;
     if (!fb_size) fb_size = (size_t)fb_fix.line_length * fb_var.yres_virtual;
+    fb_frame_size = (size_t)fb_fix.line_length * fb_var.yres;
+    if (!fb_frame_size || fb_frame_size > fb_size) return -1;
     fb_mem = mmap(NULL, fb_size, PROT_READ | PROT_WRITE, MAP_SHARED, fb_fd, 0);
     if (fb_mem == MAP_FAILED) { fb_mem = NULL; return -1; }
+    fb_canvas = calloc(1, fb_frame_size);
+    if (!fb_canvas) return -1;
     if (FT_Init_FreeType(&ft_lib) != 0) return -1;
     if (FT_New_Face(ft_lib, FONT, 0, &ft_face) != 0) return -1;
     return 0;
@@ -549,6 +575,9 @@ static void render(void)
     else if (page_diagnostics == 2) render_button_test();
     else if (confirm_mode) render_confirm();
     else render_selector();
+    /* Compose off-screen, then update the visible framebuffer in one copy. */
+    if (fb_mem && fb_canvas && fb_frame_size)
+        memcpy(fb_mem, fb_canvas, fb_frame_size);
 }
 
 static int next_key(int timeout_ms)
@@ -566,7 +595,9 @@ static int next_key(int timeout_ms)
         if (!(pfd[i].revents & POLLIN)) continue;
         struct input_event ev;
         while (read(inputs[i].fd, &ev, sizeof(ev)) == sizeof(ev)) {
-            if (ev.type == EV_KEY && ev.value == 1) return ev.code;
+            int key = baseos_map_input_event(&inputs[i].state,
+                                             ev.type, ev.code, ev.value);
+            if (key >= 0) return key;
         }
     }
     return -1;
@@ -676,17 +707,19 @@ static int run_ui(void)
     signal(SIGTERM, stop_ui);
     open_inputs();
     load_catalog();
+    load_catalog();
+    render();
     while (running) {
-        render();
         int key = next_key(500);
-        if (key >= 0) {
-            if (page_diagnostics) handle_diagnostics_key(key);
-            else handle_selector_key(key);
-        }
+        if (key < 0) continue;
+        if (page_diagnostics) handle_diagnostics_key(key);
+        else handle_selector_key(key);
+        if (running) render();
     }
     close_inputs();
     if (ft_face) FT_Done_Face(ft_face);
     if (ft_lib) FT_Done_FreeType(ft_lib);
+    free(fb_canvas);
     if (fb_mem) munmap(fb_mem, fb_size);
     if (fb_fd >= 0) close(fb_fd);
     return 0;

@@ -116,6 +116,20 @@ while ! mountpoint -q "$SD" 2>/dev/null; do
 	n=$((n + 1))
 done
 
+# Create the standard frontend package root only after the user-data volume is
+# mounted. Never create it in the temporary root filesystem or a maintenance
+# boot where the USB host owns the card.
+if mountpoint -q "$SD" 2>/dev/null; then
+  FRONTEND_ROOT="$SD/Frontends"
+  if [ -d "$FRONTEND_ROOT" ] && [ ! -L "$FRONTEND_ROOT" ]; then
+    :
+  elif [ ! -e "$FRONTEND_ROOT" ] && [ ! -L "$FRONTEND_ROOT" ]; then
+    mkdir -p "$FRONTEND_ROOT" || log "could not create frontend directory: $FRONTEND_ROOT"
+  else
+    log "refusing non-directory or symlinked frontend path: $FRONTEND_ROOT"
+  fi
+fi
+
 # Optional BaseOS-owned installer hook. Frontend names and vendor-specific
 # archive conventions do not belong in this boot supervisor.
 if mountpoint -q "$SD" 2>/dev/null; then
