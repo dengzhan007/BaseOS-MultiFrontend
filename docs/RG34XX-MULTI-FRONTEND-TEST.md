@@ -31,12 +31,12 @@
 
 BaseOS 先扫描当前启动使用的用户数据卡中的 `Frontends/`，并读取旧式 adapter。对识别到的普通前端目录，在卡内 `.baseos/compat/` 生成兼容 sidecar；不会在原前端目录内生成文件、改名或替换 ELF。
 
-兼容匹配以目录结构和启动契约为依据，不读取或判断前端产品名，也不要求入口文件使用固定的产品 basename。当前通用规则为：
+兼容匹配以目录结构和启动契约为依据，不读取或判断前端产品名。对于没有启动脚本的 H700 卡根二进制，必须遵守明确的 `System/slot` 或 `System/frontend` 命名契约，避免把动画、libretro 核心或辅助 ELF 误认为前端。当前规则为：
 - 前端包根目录中的 `launch.sh`、`start.sh`、`run.sh` 或 `frontend.sh`；
 - 任意 `.system/h700/paks/<package>.pak/launch.sh`；
 - 任意一级子目录中的 `scripts/runtime.sh`；
-- `System/` 目录中通过 ELF magic 检查的任意常规文件；
-- 前端包根目录中通过 ELF magic 检查的 `*.elf`。
+- `System/launch_frontend.sh`；
+- H700 卡根 ELF 契约：仅识别 `System/slot` 或 `System/frontend`，并检查 ELF magic；不会扫描 `System/` 中的任意 ELF，也不会把包根目录的任意 `*.elf` 当作前端入口。
 
 现有前端只是这些通用规则的兼容样例：
 - Slot：`System/slot`
