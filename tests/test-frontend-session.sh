@@ -170,14 +170,17 @@ run_session
 [ "$(cat /tmp/frontend.log)" = runtime ] || fail "runtime layout was not launched"
 echo "ok: generic runtime layout uses shared card-root paths"
 
-# Any ELF payload under System/ is discovered without a product-specific name.
+# Arbitrary ELF payloads (cores, splash helpers, etc.) are not frontend entrypoints.
+# Only the explicit System/slot and System/frontend contracts are accepted.
 reset_card
 mkdir -p /mnt/sdcard/System
 printf '\177ELF\002\001\001\000binary fixture\n' > /mnt/sdcard/System/application
 run_session
-[ "$status" -eq 0 ] || { cat /tmp/session-console.log >&2; fail "generic System ELF returned $status"; }
-[ "$(cat /tmp/frontend.log)" = binary ] || fail "generic System ELF layout was not launched"
-echo "ok: arbitrary System ELF payload uses the generic binary adapter"
+[ "$status" -eq 1 ] || { cat /tmp/session-console.log >&2; fail "unknown System ELF should leave the session in the no-frontend state"; }
+[ ! -e /tmp/frontend.log ] || fail "arbitrary System ELF was incorrectly executed"
+grep -q 'no frontend on card' "$BOOT_LOG" || grep -q 'ADD FRONTEND TO SD CARD' /tmp/splash.log \
+  || fail "unknown System ELF did not produce the no-frontend state"
+echo "ok: arbitrary System ELF payload is rejected as a frontend entrypoint"
 
 # GPU readiness remains bounded and does not depend on frontend naming.
 reset_card
