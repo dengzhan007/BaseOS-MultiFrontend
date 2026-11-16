@@ -66,9 +66,18 @@ grep -qx 'compat_api=1' "$SIDE/baseos-frontend.conf" || fail "compatibility API 
 
 # H700 native layouts are automatically wrapped outside the frontend payload.
 mkdir -p "$TF1/Frontends/H700Slot/System" \
+  "$TF1/Frontends/LEI-V4/System" \
+  "$TF1/Frontends/LUCKLUCK-SLOT/System" \
+  "$TF1/Frontends/UnknownELFs/System" \
   "$TF1/Frontends/H700NextUI/.system/h700/paks/MinUI.pak" \
   "$TF1/Frontends/H700Spruce/spruce/scripts"
 printf '\177ELF\002\001\001\000compat-binary-fixture' > "$TF1/Frontends/H700Slot/System/slot"
+# LEI and LUCK contain auxiliary ELF files before/alongside the real frontend.
+printf '\177ELF\002\001\001\000opening-animation' > "$TF1/Frontends/LEI-V4/System/baseos-opening"
+printf '\177ELF\002\001\001\000libretro-core' > "$TF1/Frontends/LUCKLUCK-SLOT/System/fbneo_libretro.so"
+printf '\177ELF\002\001\001\000lei-slot-main' > "$TF1/Frontends/LEI-V4/System/slot"
+printf '\177ELF\002\001\001\000luck-slot-main' > "$TF1/Frontends/LUCKLUCK-SLOT/System/slot"
+printf '\177ELF\002\001\001\000unknown-helper' > "$TF1/Frontends/UnknownELFs/System/helper"
 [ "$(od -An -N4 -tx1 "$TF1/Frontends/H700Slot/System/slot" | tr -d '[:space:]')" = 7f454c46 ] || fail "binary fixture does not contain an ELF magic header"
 printf '%s\\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/H700NextUI/.system/h700/paks/MinUI.pak/launch.sh"
 printf '%s\\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/H700Spruce/spruce/scripts/runtime.sh"
@@ -82,6 +91,17 @@ SPRUCE_SIDE=$TF1/.baseos/compat/H700Spruce
 [ -f "$SPRUCE_SIDE/baseos-frontend.conf" ] || fail "spruce runtime layout was not recognized"
 grep -qx 'compat_entrypoint=System/slot' "$SLOT_SIDE/baseos-frontend.conf" || fail "Slot entrypoint metadata is wrong"
 grep -qx 'compat_mode=binary-card' "$SLOT_SIDE/baseos-frontend.conf" || fail "generic card-binary launch mode is wrong"
+for id in LEI-V4 LUCKLUCK-SLOT; do
+  [ -f "$TF1/.baseos/compat/$id/baseos-frontend.conf" ] || fail "$id was not recognized"
+  grep -qx 'compat_entrypoint=System/slot' "$TF1/.baseos/compat/$id/baseos-frontend.conf" || fail "$id selected an auxiliary ELF instead of System/slot"
+  grep -qx 'compat_mode=binary-card' "$TF1/.baseos/compat/$id/baseos-frontend.conf" || fail "$id did not use binary-card mode"
+done
+[ ! -e "$TF1/.baseos/compat/UnknownELFs/baseos-frontend.conf" ] || fail "unknown arbitrary ELF was incorrectly selected as a frontend"
+[ "$("$TMP/baseos-frontend-compat" probe "$TF1/Frontends/LEI-V4")" = "System/slot|binary-card" ] || fail "LEI probe selected the wrong entrypoint"
+[ "$("$TMP/baseos-frontend-compat" probe "$TF1/Frontends/LUCKLUCK-SLOT")" = "System/slot|binary-card" ] || fail "LUCK probe selected the wrong entrypoint"
+if "$TMP/baseos-frontend-compat" probe "$TF1/Frontends/UnknownELFs" >/dev/null 2>&1; then
+  fail "unknown arbitrary ELF directory unexpectedly passed probe"
+fi
 grep -qx 'compat_entrypoint=.system/h700/paks/MinUI.pak/launch.sh' "$NEXTUI_SIDE/baseos-frontend.conf" || fail "NextUI entrypoint metadata is wrong"
 grep -qx 'compat_mode=script-pak' "$NEXTUI_SIDE/baseos-frontend.conf" || fail "pak script launch mode is wrong"
 grep -qx 'compat_entrypoint=spruce/scripts/runtime.sh' "$SPRUCE_SIDE/baseos-frontend.conf" || fail "spruce entrypoint metadata is wrong"
