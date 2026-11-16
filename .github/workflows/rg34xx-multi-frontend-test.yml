@@ -178,7 +178,7 @@ jobs:
           set -euo pipefail
           version="$(tr -d ' \n' < VERSION)"
           work="work/rg34xx"
-          update="$work/baseos-rg34xx-\${version}.bosupd"
+          update="$work/baseos-rg34xx-${version}.bosupd"
           test -s "$update"
           manifest="$work/upgrade-manifest.txt"
           tar -xOf "$update" manifest > "$manifest"
@@ -189,33 +189,33 @@ jobs:
           grep -q '^image-sha256=[0-9a-f]\{64\}$' "$manifest"
           (cd "$work" && sha256sum "$(basename "$update")" > "$(basename "$update").sha256")
           cat > "$work/UPGRADE-README.txt" <<'EOF'
-RG34XX BaseOS Multi-Frontend — A/B upgrade package
-===================================================
-
-1. This package is for Anbernic RG34XX (Allwinner H700) only.
-2. It requires a card already running the BaseOS RG34XX image with the
-   seven-partition A/B layout. It cannot convert a stock/non-A/B card.
-3. Copy the .bosupd file to the root of the active frontend/data card
-   (TF2 when it is the active card; otherwise TF1).
-4. Safely eject the card if using a computer, put it back, then power on
-   normally. BaseOS detects and applies the update before launching a frontend.
-5. Do not power off or remove the card while the update progress is running.
-   The device verifies the inactive system slot, switches to it and reboots.
-6. The applied .bosupd file is removed automatically after commit.
-
-The update writes the inactive rootfs slot only. The A/B updater preserves
-the UDISK (/data) and visible primary data partition, including Games,
-Saves, frontend payloads and user settings. A first-boot migration that is
-already pending on the device may separately install its bundled boot pair.
-
-If the update does not start, inspect baseos-update status over SSH or the
-BaseOS boot log. Do not use this package on another RG device or on a card
-that has not first been initialized with the RG34XX A/B full image.
-
-The .sha256 file checks the downloaded archive. The manifest inside the
-archive carries a second SHA-256 for the decompressed rootfs slot.
-CI validation does not replace physical RG34XX testing.
-EOF
+          RG34XX BaseOS Multi-Frontend — A/B upgrade package
+          ===================================================
+          
+          1. This package is for Anbernic RG34XX (Allwinner H700) only.
+          2. It requires a card already running the BaseOS RG34XX image with the
+             seven-partition A/B layout. It cannot convert a stock/non-A/B card.
+          3. Copy the .bosupd file to the root of the active frontend/data card
+             (TF2 when it is the active card; otherwise TF1).
+          4. Safely eject the card if using a computer, put it back, then power on
+             normally. BaseOS detects and applies the update before launching a frontend.
+          5. Do not power off or remove the card while the update progress is running.
+             The device verifies the inactive system slot, switches to it and reboots.
+          6. The applied .bosupd file is removed automatically after commit.
+          
+          The update writes the inactive rootfs slot only. The A/B updater preserves
+          the UDISK (/data) and visible primary data partition, including Games,
+          Saves, frontend payloads and user settings. A first-boot migration that is
+          already pending on the device may separately install its bundled boot pair.
+          
+          If the update does not start, inspect baseos-update status over SSH or the
+          BaseOS boot log. Do not use this package on another RG device or on a card
+          that has not first been initialized with the RG34XX A/B full image.
+          
+          The .sha256 file checks the downloaded archive. The manifest inside the
+          archive carries a second SHA-256 for the decompressed rootfs slot.
+          CI validation does not replace physical RG34XX testing.
+          EOF
           {
             echo "artifact=RG34XX multi-frontend A/B upgrade package"
             echo "target=rg34xx"
@@ -230,14 +230,14 @@ EOF
             echo "write_scope=inactive rootfs slot; user-data partitions preserved"
             echo "roundtrip_validation=passed in CI before upload"
             echo "hardware_validation=not_performed_by_CI"
-          } > "$work/baseos-rg34xx-\${version}-upgrade.build.txt"
+          } > "$work/baseos-rg34xx-${version}-upgrade.build.txt"
           ls -lh "$update" "$update.sha256" "$work/UPGRADE-README.txt" \
-            "$work/baseos-rg34xx-\${version}-upgrade.build.txt"
+            "$work/baseos-rg34xx-${version}-upgrade.build.txt"
 
       - name: Upload temporary A/B upgrade package
         uses: actions/upload-artifact@v4
         with:
-          name: RG34XX-MultiFrontend-Upgrade-\${{ github.sha }}
+          name: RG34XX-MultiFrontend-Upgrade-${{ github.sha }}
           path: |
             work/rg34xx/baseos-rg34xx-*.bosupd
             work/rg34xx/baseos-rg34xx-*.bosupd.sha256
