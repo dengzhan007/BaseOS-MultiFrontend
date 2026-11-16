@@ -2,7 +2,7 @@
 
 **目标设备：Anbernic RG34XX / Allwinner H700**  
 **测试分支：`test/rg34xx-multi-frontend`**  
-**状态：构建与主机侧回归测试待 GitHub Actions 结果确认；尚未完成 RG34XX 实机验收。**
+**状态：控制中心修复版完整镜像已通过 CI 构建；A/B 升级包正在加入 CI；尚未完成 RG34XX 实机验收。**
 
 ## 移植原则
 
@@ -88,7 +88,14 @@ BaseOS 会为需要旧目录名称的前端创建运行时路径映射，例如�
 3. RG34XX rootfs 构建和 QEMU userspace 启动检查；
 4. 完整 RG34XX SD 镜像组装及结构校验。
 
-成功后上传临时 Actions artifact，不创建正式 Release 或版本标签。产物为完整刷写镜像及 SHA-256/build 信息。该构建阶段不提供从其他 BaseOS 版本直接升级的保证。
+成功后上传两个独立的临时 Actions artifact，不创建正式 Release 或版本标签：
+
+- **完整刷写包**：`baseos-rg34xx-*-multi-frontend-test.img.zip`，用于首次安装或恢复分区布局；会重建整张卡，刷写前必须备份数据。
+- **A/B 升级包**：`baseos-rg34xx-<VERSION>.bosupd`，附带归档 SHA-256 和构建信息。CI 会在上传前把升级包实际应用到一份复制的 RG34XX 镜像，检查槽位切换，并确认 UDISK 和用户 FAT 分区保持逐字节不变。
+
+日常测试优先使用 A/B 升级包：将 `.bosupd` 复制到当前活动的数据卡根目录（TF2 为活动卡时放 TF2，否则放 TF1），安全弹出后正常开机。BaseOS 会在启动前应用更新、校验并自动重启；更新过程中不要断电或拔卡。成功提交后升级文件会自动删除。
+
+升级包只适用于已经刷入 RG34XX BaseOS 七分区 A/B 布局的设备，不能从原厂分区布局直接升级，也不能跨设备型号使用。它更新非活动 rootfs 槽，不重刷整张卡；`/data`、`Games/`、`Saves/`、前端程序和用户配置均保留。若设备尚未刷入本项目的 A/B 完整镜像，首次仍需完整刷写。
 
 ## 首次实机验收
 
