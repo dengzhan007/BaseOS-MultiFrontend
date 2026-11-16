@@ -5,6 +5,7 @@ HERE=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 DISCOVERY="$HERE/overlay/usr/sbin/baseos-frontend-discovery"
 MANAGER="$HERE/overlay/usr/sbin/baseos-frontend-manager"
 HELPER="$HERE/overlay/usr/sbin/baseos-frontend-compat"
+export BASEOS_DISCOVERY_LIB="$DISCOVERY"
 TMP=${TMPDIR:-/tmp}/baseos-compat-test-$$
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 TF1=$TMP/card
