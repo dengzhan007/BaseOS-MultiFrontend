@@ -1,8 +1,8 @@
 #!/bin/sh
 # Host-side tests for the generic frontend adapter contract.
 set -eu
-HERE=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-. "$HERE/overlay/usr/sbin/baseos-frontend-discovery"
+TEST_ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+. "$TEST_ROOT/overlay/usr/sbin/baseos-frontend-discovery"
 TMP=${TMPDIR:-/tmp}/baseos-adapter-test-$$
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$TMP/card/.baseos/frontends/alpha" "$TMP/card/.baseos/frontends/beta" "$TMP/card/.baseos/frontends/-bad" "$TMP/card/.baseos/frontends/unsupported" "$TMP/card/.baseos/frontends/old-adapter" "$TMP/card/wrapper/.baseos/frontends/gamma" "$TMP/card/baseos/frontends/visible" "$TMP/card/baseos/frontends/alpha"
@@ -103,18 +103,18 @@ mkdir -p "$TMP/card/Frontends/ExtraFrontend/.baseos/frontends/extra"
 baseos_frontend_tree_changed_since "$TMP/card" "$CACHE" || fail "new nested frontend bundle did not invalidate cache"
 # The H700 session consumes the catalog and selector APIs, and its
 # inittab keeps background boot output away from the framebuffer UI.
-SESSION="$HERE/overlay/usr/sbin/frontend-session"
+SESSION="$TEST_ROOT/overlay/usr/sbin/frontend-session"
 grep -Fq '/usr/sbin/baseos-frontend-manager catalog' "$SESSION" || fail "frontend supervisor does not build the multi-frontend catalog"
 grep -Fq '/usr/sbin/baseos-control-center --selector' "$SESSION" || fail "frontend supervisor does not expose the selector"
 grep -Fq 'boot selector requested by L1/R1' "$SESSION" || fail "frontend supervisor does not preserve the L1/R1 selector request"
-INITTAB="$HERE/overlay/etc/inittab"
+INITTAB="$TEST_ROOT/overlay/etc/inittab"
 grep -Fq '::sysinit:/etc/init.d/rcS' "$INITTAB" || fail "inittab does not start H700 rcS"
 grep -Fq '::respawn:/sbin/frontend-session' "$INITTAB" || fail "inittab does not respawn the H700 frontend supervisor"
 
 # The H700 boot selector is a single-key shoulder shortcut: either L1
 # or R1 enters it. MENU-triggered USB storage keeps priority in rcS.
-CONTROL_CENTER="$HERE/src/baseos-control-center.c"
-RCS="$HERE/overlay/etc/init.d/rcS"
+CONTROL_CENTER="$TEST_ROOT/src/baseos-control-center.c"
+RCS="$TEST_ROOT/overlay/etc/init.d/rcS"
 grep -Fq 'key_is_down(BTN_WEST) || key_is_down(BTN_Z)' "$CONTROL_CENTER" \
   || fail "boot selector must accept L1 OR R1, not require both"
 grep -Fq '/usr/sbin/baseos-control-center --boot-held' "$RCS" \
