@@ -619,7 +619,8 @@ apply_map() {
           return 1
           ;;
         esac
-        case "$ap_shared_name" in Games|Saves|Bios|Cheats|Overlays|Shaders) ;;
+        case "$ap_shared_name" in
+          Games|Saves|Bios|Cheats|Overlays|Shaders) ;;
           *)
             echo "invalid shared_map destination: $ap_shared_name" >&2
             rm -f "$ap_state"
