@@ -202,16 +202,16 @@ mkdir -p "$PRIVATE_PROGRAM/overlays" "$PRIVATE_USERDATA"
 printf '%s\\n' "lei-mask" > "$PRIVATE_PROGRAM/overlays/mask.png"
 sh "$HELPER" scan "$PRIVATE_CARD" lei-v4 "$PRIVATE_PROGRAM" || fail "private overlays path-map scan failed"
 PRIVATE_MAP=$PRIVATE_CARD/.baseos/frontend-paths/lei-v4.conf
-grep -qx 'overlays_target=Overlays' "$PRIVATE_MAP" || fail "private overlays legacy target missing"
+grep -qx 'overlays_target=overlays' "$PRIVATE_MAP" || fail "private overlays legacy target missing"
 grep -qx 'share_overlays=no' "$PRIVATE_MAP" || fail "bundled overlays were not made private by default"
 sh "$HELPER" apply "$PRIVATE_CARD" "$PRIVATE_PROGRAM" "$PRIVATE_MAP" "$PRIVATE_USERDATA" "$PRIVATE_INSTANCE" || \
   fail "private overlays mapping failed"
-[ -L "$PRIVATE_CARD/Overlays" ] || fail "card-root Overlays alias missing"
-[ "$(readlink "$PRIVATE_CARD/Overlays")" = "$PRIVATE_PROGRAM/overlays" ] || \
-  fail "card-root Overlays alias does not point to the frontend's bundled overlays"
-[ -f "$PRIVATE_CARD/Overlays/mask.png" ] || fail "frontend bundled mask is not visible at the legacy path"
+[ -L "$PRIVATE_CARD/overlays" ] || fail "card-root overlays alias missing"
+[ "$(readlink "$PRIVATE_CARD/overlays")" = "$PRIVATE_PROGRAM/overlays" ] || \
+  fail "card-root overlays alias does not point to the frontend's bundled overlays"
+[ -f "$PRIVATE_CARD/overlays/mask.png" ] || fail "frontend bundled mask is not visible at the legacy path"
 sh "$HELPER" cleanup "$PRIVATE_CARD" || fail "private overlays cleanup failed"
-[ ! -L "$PRIVATE_CARD/Overlays" ] || fail "private overlays alias survived cleanup"
+[ ! -L "$PRIVATE_CARD/overlays" ] || fail "private overlays alias survived cleanup"
 [ -f "$PRIVATE_PROGRAM/overlays/mask.png" ] || fail "private overlays cleanup modified frontend assets"
 
 echo "PASS: BaseOS path maps share frontend cores and preserve legacy ROM paths"
