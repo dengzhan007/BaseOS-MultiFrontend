@@ -95,8 +95,9 @@ static int open_inputs(void)
         memset(absbits, 0, sizeof(absbits));
         has_key_input = ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) >= 0 &&
             (bit_set(keybits, BTN_SOUTH) || bit_set(keybits, BTN_EAST) ||
-             bit_set(keybits, BTN_WEST) || bit_set(keybits, BTN_NORTH) ||
-             bit_set(keybits, BTN_START) || bit_set(keybits, BTN_SELECT) ||
+             bit_set(keybits, BTN_WEST) || bit_set(keybits, BTN_Z) ||
+             bit_set(keybits, BTN_NORTH) || bit_set(keybits, BTN_START) ||
+             bit_set(keybits, BTN_SELECT) ||
              bit_set(keybits, BTN_TL) || bit_set(keybits, BTN_TR) ||
              bit_set(keybits, KEY_UP) || bit_set(keybits, KEY_DOWN) ||
              bit_set(keybits, KEY_LEFT) || bit_set(keybits, KEY_RIGHT) ||
@@ -146,7 +147,7 @@ static int key_is_down(int key)
 static int boot_selector_held(void)
 {
     if (!open_inputs()) return 0;
-    int held = key_is_down(BTN_TL) || key_is_down(BTN_TR);
+    int held = key_is_down(BTN_WEST) || key_is_down(BTN_Z);
     close_inputs();
     return held;
 }
@@ -531,14 +532,16 @@ static void render_diagnostics(void)
 static const char *input_key_name(int key)
 {
     switch (key) {
-    case BTN_TL: return "L1 / TL";
-    case BTN_TR: return "R1 / TR";
+    case BTN_WEST: return "L1";
+    case BTN_Z: return "R1";
+    case BTN_TL: return "Select";
+    case BTN_TR: return "Start";
     case BTN_TL2: return "L2";
     case BTN_TR2: return "R2";
     case BTN_SOUTH: return "A / South";
     case BTN_EAST: return "B / East";
-    case BTN_WEST: return "Y / West";
-    case BTN_NORTH: return "X / North";
+    case BTN_C: return "X";
+    case BTN_NORTH: return "Y";
     case BTN_START: return "Start";
     case BTN_SELECT: return "Select";
     case BTN_MODE: return "Menu / Mode";
