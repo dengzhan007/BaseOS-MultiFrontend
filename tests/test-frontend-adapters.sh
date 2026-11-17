@@ -117,8 +117,8 @@ CONTROL_CENTER="$TEST_ROOT/src/baseos-control-center.c"
 RCS="$TEST_ROOT/overlay/etc/init.d/rcS"
 grep -Fq '(has_west && down_west) || (has_z && down_z)' "$CONTROL_CENTER" \
   || fail "boot selector must accept L1 OR R1, not require both"
-grep -Fq '/usr/sbin/baseos-control-center --boot-held' "$RCS" \
-  || fail "rcS does not sample the shoulder selector request"
+grep -Fq '/usr/sbin/boot-selector-held' "$RCS" \
+  || fail "rcS does not sample the GPIO shoulder selector request"
 grep -Fq 'if [ "$USB_STORAGE_MODE" -eq 0 ]' "$RCS" \
   || fail "shoulder selector request is not gated behind USB-storage priority"
 grep -Fq 'boot selector requested by L1/R1' "$SESSION" \
