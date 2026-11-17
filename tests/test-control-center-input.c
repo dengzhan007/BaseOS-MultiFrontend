@@ -6,6 +6,13 @@ int main(void)
 {
     BaseOSInputState state = {0, 0};
 
+    /* The RG34XX device tree assigns BTN_WEST/BTN_Z to L1/R1;
+     * BTN_TL/BTN_TR are Select/Start and must not open the selector. */
+    assert(baseos_is_boot_selector_key(BTN_WEST));
+    assert(baseos_is_boot_selector_key(BTN_Z));
+    assert(!baseos_is_boot_selector_key(BTN_TL));
+    assert(!baseos_is_boot_selector_key(BTN_TR));
+
     assert(baseos_map_input_event(&state, EV_KEY, KEY_UP, 1) == KEY_UP);
     assert(baseos_map_input_event(&state, EV_KEY, BTN_DPAD_DOWN, 1) == KEY_DOWN);
     assert(baseos_map_input_event(&state, EV_KEY, KEY_LEFT, 2) == KEY_LEFT);
