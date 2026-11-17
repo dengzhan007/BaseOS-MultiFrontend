@@ -80,6 +80,20 @@ BaseOS 先扫描当前启动使用的用户数据卡中的 `Frontends/`，并读
 
 BaseOS 会为需要旧目录名称的前端创建运行时路径映射，例如把前端要求的 `Roms/` 指向共享的 `Games/`，把 profile 私有配置/素材指向对应 instance。路径别名由 BaseOS 在前端会话结束时清理。
 
+每个前端还有一份独立的 BaseOS 路径映射配置，保存在活动数据卡的 `.baseos/frontend-paths/<frontend-id>.conf`。首次扫描时自动生成；后续扫描不会覆盖用户修改。配置按前端 ID 区分，同一前端的不同 profile 共用这份目录映射规则，但各自的 profile userdata 仍然隔离。
+
+默认情况下，前端包中的普通顶层目录（包括隐藏目录）都按私有目录处理，运行时映射回该前端自己的目录。若某个前端使用不同的目录名称，但希望接入 BaseOS 公共目录，可在该前端自己的配置文件中增加一个或多个 `shared_map`：
+
+```ini
+# 前端的 media 目录映射到 BaseOS 公共 Overlays
+shared_map=media:Overlays
+
+# 前端的 cheatfiles 目录映射到 BaseOS 公共 Cheats
+shared_map=cheatfiles:Cheats
+```
+
+格式为 `shared_map=<前端私有目录名>:<BaseOS公共目录名>`。目前公共目标限定为 `Games`、`Saves`、`Bios`、`Cheats`、`Overlays` 和 `Shaders`。映射源目录必须存在于该前端包内；未声明的目录仍保持私有。BaseOS 只创建会话期间的目录别名/挂载，不搬移或删除源文件；已有的非空卡根同名目录会受到保护，冲突时不会强行覆盖。
+
 ## 构建与下载
 
 专用 GitHub Actions 工作流只监听本测试分支，使用仓库内已校验的 RG34XX prepared inputs，执行：
