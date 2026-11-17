@@ -214,4 +214,21 @@ sh "$HELPER" cleanup "$PRIVATE_CARD" || fail "private overlays cleanup failed"
 [ ! -L "$PRIVATE_CARD/overlays" ] || fail "private overlays alias survived cleanup"
 [ -f "$PRIVATE_PROGRAM/overlays/mask.png" ] || fail "private overlays cleanup modified frontend assets"
 
+# Arbitrary frontend-private directories (including nested contents and
+# names containing spaces) are mapped automatically without a per-name rule.
+mkdir -p "$PRIVATE_PROGRAM/Artwork Cache/themes/default" "$PRIVATE_PROGRAM/runtime-data/profiles"
+printf '%s\\n' "theme" > "$PRIVATE_PROGRAM/Artwork Cache/themes/default/theme.cfg"
+printf '%s\\n' "profile" > "$PRIVATE_PROGRAM/runtime-data/profiles/default.ini"
+sh "$HELPER" scan "$PRIVATE_CARD" lei-v4 "$PRIVATE_PROGRAM" || fail "generic private-directory scan failed"
+sh "$HELPER" apply "$PRIVATE_CARD" "$PRIVATE_PROGRAM" "$PRIVATE_MAP" "$PRIVATE_USERDATA" "$PRIVATE_INSTANCE" || fail "generic private-directory mapping failed"
+[ -L "$PRIVATE_CARD/Artwork Cache" ] || fail "arbitrary private directory with spaces was not mapped"
+[ "$(readlink "$PRIVATE_CARD/Artwork Cache")" = "$PRIVATE_PROGRAM/Artwork Cache" ] || fail "private directory points outside its frontend bundle"
+[ -f "$PRIVATE_CARD/Artwork Cache/themes/default/theme.cfg" ] || fail "nested private content is not visible through the alias"
+[ -L "$PRIVATE_CARD/runtime-data" ] || fail "arbitrary runtime-data directory was not mapped"
+sh "$HELPER" cleanup "$PRIVATE_CARD" || fail "generic private-directory cleanup failed"
+[ ! -L "$PRIVATE_CARD/Artwork Cache" ] || fail "generic private alias survived cleanup"
+[ ! -L "$PRIVATE_CARD/runtime-data" ] || fail "generic runtime-data alias survived cleanup"
+[ -f "$PRIVATE_PROGRAM/Artwork Cache/themes/default/theme.cfg" ] || fail "generic private cleanup modified original frontend data"
+[ -f "$PRIVATE_PROGRAM/runtime-data/profiles/default.ini" ] || fail "generic cleanup deleted nested frontend data"
+
 echo "PASS: BaseOS path maps share frontend cores and preserve legacy ROM paths"
