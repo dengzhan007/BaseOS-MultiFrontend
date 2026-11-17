@@ -1,0 +1,8 @@
+#!/bin/sh
+# H700 GPIO-key driver does not expose reliable EVIOCGKEY state at cold boot.
+# L1 (GPIO 10) and R1 (GPIO 12) are active-low; either key requests the selector.
+GPIO="${BASEOS_GPIO_DEBUG:-/sys/kernel/debug/gpio}"
+[ -r "$GPIO" ] || exit 1
+
+grep -Eq 'gpio-10[[:space:]]+\\([^)]*\\|GPIO Key L1[[:space:]]*\\)[[:space:]]+in[[:space:]]+lo([[:space:]]|$)' "$GPIO" 2>/dev/null ||
+grep -Eq 'gpio-12[[:space:]]+\\([^)]*\\|GPIO Key R1[[:space:]]*\\)[[:space:]]+in[[:space:]]+lo([[:space:]]|$)' "$GPIO" 2>/dev/null
