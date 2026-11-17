@@ -315,12 +315,23 @@ if { [ -e /run/boot-menu-held ] || /usr/sbin/boot-menu-held; } \
 	&& /usr/sbin/usb-storage-mode prepare; then
 	USB_STORAGE_MODE=1
 fi
-# Capture L1/R1 at the earliest userspace point. Either shoulder key
-# requests the frontend selector; USB-storage (MENU) has already won above.
+# Capture L1/R1 at the earliest userspace point. Input devices can
+# register after the storage controllers; sample repeatedly for a short,
+# bounded window so a held key is not missed by a one-shot probe. USB-storage
+# (MENU) has already won above. Do not delay a normal boot when no key is held
+# beyond this 1.5 s detection window.
 if [ "$USB_STORAGE_MODE" -eq 0 ] &&
-   [ -x /usr/sbin/baseos-control-center ] &&
-   /usr/sbin/baseos-control-center --boot-held; then
-	: > /run/baseos-frontend-select.boot-request
+   [ -x /usr/sbin/baseos-control-center ]; then
+	selector_probe=0
+	while [ "$selector_probe" -lt 30 ]; do
+		if /usr/sbin/baseos-control-center --boot-held; then
+			: > /run/baseos-frontend-select.boot-request
+			echo 'baseos: L1/R1 held at boot; frontend selector requested' > /dev/kmsg
+			break
+		fi
+		sleep 0.05 2>/dev/null || break
+		selector_probe=$((selector_probe + 1))
+	done
 fi
 
 # Normal boot mounts the frontend/data card: TF2 p1 wins if usable, else this
