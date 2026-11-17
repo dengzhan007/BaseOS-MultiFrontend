@@ -281,6 +281,8 @@ scan_map() {
     [ -z "$sm_runtime" ] || printf 'runtime_target=%s\n' "$sm_runtime"
     [ -z "$sm_config" ] || printf 'config_target=%s\n' "$sm_config"
     [ -z "$sm_cores" ] || printf 'cores_target=%s\n' "$sm_cores"
+    printf '%s\\n' '# Map a frontend-private folder to a shared root (repeat as needed):'
+    printf '%s\\n' '# shared_map=media:Overlays' '# shared_map=cheatfiles:Cheats'
     printf '%s\n' '# BaseOS creates temporary card-root aliases from these paths while this frontend runs.'
     printf '%s\n' '# Edit target values to change the frontend-facing directory names; rescans preserve this file.'
   } > "$sm_tmp"
@@ -596,10 +598,53 @@ apply_map() {
     add_alias "$ap_root" "$ap_config" "$ap_frontend_config" "$ap_state"
   fi
   [ -z "$ap_userdata" ] || [ -z "$4" ] || add_alias "$ap_root" "$ap_userdata" "$4" "$ap_state"
+  # Explicit per-frontend shared mappings use repeated entries:
+  # shared_map=FRONTEND_PRIVATE_DIR:BASEOS_SHARED_DIR
+  # Only canonical BaseOS shared roots are accepted as destinations.
+  while IFS= read -r ap_map_line || [ -n "$ap_map_line" ]; do
+    case "$ap_map_line" in
+      shared_map=*)
+        ap_pair=${ap_map_line#shared_map=}
+        case "$ap_pair" in *:*) ;; *)
+          echo "invalid shared_map entry (expected source:target): $ap_pair" >&2
+          rm -f "$ap_state"
+          return 1
+          ;;
+        esac
+        ap_private_name=${ap_pair%%:*}
+        ap_shared_name=${ap_pair#*:}
+        case "$ap_pair" in *:*:*)
+          echo "invalid shared_map entry with multiple separators: $ap_pair" >&2
+          rm -f "$ap_state"
+          return 1
+          ;;
+        esac
+        case "$ap_shared_name" in Games|Saves|Bios|Cheats|Overlays|Shaders) ;;
+          *)
+            echo "invalid shared_map destination: $ap_shared_name" >&2
+            rm -f "$ap_state"
+            return 1
+            ;;
+        esac
+        valid_target "$ap_private_name" || {
+          echo "invalid shared_map source: $ap_private_name" >&2
+          rm -f "$ap_state"
+          return 1
+        }
+        [ -d "$ap_program/$ap_private_name" ] &&
+          [ ! -L "$ap_program/$ap_private_name" ] || {
+            echo "shared_map source directory not found: $ap_private_name" >&2
+            rm -f "$ap_state"
+            return 1
+          }
+        add_alias "$ap_root" "$ap_private_name" "$ap_root/$ap_shared_name" "$ap_state" || return 1
+        ;;
+    esac
+  done < "$ap_map"
+
   # Every other top-level directory shipped by this frontend is private by
-  # default. Expose it at the card-root path expected by legacy frontends,
-  # while keeping its source inside this frontend bundle. Shared roots and
-  # BaseOS-managed compatibility paths are handled explicitly above.
+  # default. Explicitly mapped directories are excluded from the private
+  # fallback below.
   for ap_private_dir in "$ap_program"/* "$ap_program"/.[!.]* "$ap_program"/..?*; do
     [ -d "$ap_private_dir" ] && [ ! -L "$ap_private_dir" ] || continue
     ap_private_name=${ap_private_dir##*/}
@@ -612,6 +657,14 @@ apply_map() {
       log "skipping private directory with unsupported name: $ap_private_name"
       continue
     }
+    if grep -F -x -q "shared_map=$ap_private_name:Games" "$ap_map" ||
+       grep -F -x -q "shared_map=$ap_private_name:Saves" "$ap_map" ||
+       grep -F -x -q "shared_map=$ap_private_name:Bios" "$ap_map" ||
+       grep -F -x -q "shared_map=$ap_private_name:Cheats" "$ap_map" ||
+       grep -F -x -q "shared_map=$ap_private_name:Overlays" "$ap_map" ||
+       grep -F -x -q "shared_map=$ap_private_name:Shaders" "$ap_map"; then
+      continue
+    fi
     add_alias "$ap_root" "$ap_private_name" "$ap_private_dir" "$ap_state"
   done
   if [ -n "$ap_cores" ]; then
