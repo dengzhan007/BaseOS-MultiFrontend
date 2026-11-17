@@ -8,6 +8,13 @@ typedef struct {
     int hat_y;
 } BaseOSInputState;
 
+/* RG34XX H700 DT maps the physical shoulder buttons to BTN_WEST (L1)
+ * and BTN_Z (R1). BTN_TL/BTN_TR are Select/Start on this device. */
+static inline int baseos_is_boot_selector_key(int code)
+{
+    return code == BTN_WEST || code == BTN_Z;
+}
+
 /*
  * Normalize controller navigation into Linux KEY_* codes. RG34XX firmware
  * may expose the D-pad as EV_KEY, BTN_DPAD_* or as EV_ABS ABS_HAT0X/Y.
