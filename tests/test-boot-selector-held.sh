@@ -30,3 +30,5 @@ if BASEOS_GPIO_DEBUG="$TMP/missing" sh "$SCRIPT"; then
 fi
 
 echo "boot-selector-held tests passed"
+
+# Keep this test in the normal RG34XX validation sequence.
