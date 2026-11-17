@@ -1,8 +1,46 @@
 #!/bin/sh
 # H700 gpio-keys does not expose reliable EVIOCGKEY state at cold boot.
 # L1 (GPIO 10) and R1 (GPIO 12) are active-low; either key requests the selector.
-GPIO="${BASEOS_GPIO_DEBUG:-/sys/kernel/debug/gpio}"
-[ -r "$GPIO" ] || exit 1
+#
+# rcS mounts debugfs early, but gpiolib creates /sys/kernel/debug/gpio and the
+# gpio-keys driver claims its lines only later in boot. A single read can happen
+# before either exists and miss a key that is actually held. Wait, with a hard
+# bound, for the file to be readable and for the L1/R1 line to be published,
+# then sample the level once. On a normal boot both are already present, so the
+# first pass succeeds and no extra sleep is incurred.
 
+GPIO="${BASEOS_GPIO_DEBUG:-/sys/kernel/debug/gpio}"
+
+# Poll cadence and bound. At most TRIES-1 = 20 sleeps of 0.05 s = 1.00 s of
+# extra delay, and only on the abnormal path where the GPIO state has not
+# appeared yet (the vendor gpio-keys driver claims its lines around 1 s into
+# boot). Both values are overridable so the unit tests can simulate slow or
+# never-appearing state without sleeping a full second. On kernels without
+# fractional-second sleep, `sleep 1` keeps the wait effective but longer; the
+# loop is still bounded by the same counter.
+INTERVAL="${BASEOS_GPIO_WAIT_INTERVAL:-0.05}"
+TRIES="${BASEOS_GPIO_WAIT_TRIES:-21}"
+
+# A line is "present" once gpiolib publishes it, regardless of its level.
+lines_present() {
+	grep -Eq 'gpio-10.*[|]GPIO Key L1[[:space:]]*[)]|gpio-12.*[|]GPIO Key R1[[:space:]]*[)]' \
+		"$GPIO" 2>/dev/null
+}
+
+n=0
+while [ "$n" -lt "$TRIES" ]; do
+	if [ -r "$GPIO" ] && lines_present; then
+		break
+	fi
+	n=$((n + 1))
+	[ "$n" -lt "$TRIES" ] || break
+	sleep "$INTERVAL" 2>/dev/null || sleep 1
+done
+
+# Never readable, or lines never published: fail closed into normal boot.
+[ -r "$GPIO" ] || exit 1
+lines_present || exit 1
+
+# Lines are present: read the current level once, after the wait.
 grep -Eq 'gpio-10.*[|]GPIO Key L1[[:space:]]*[)][[:space:]]+in[[:space:]]+lo([[:space:]]|$)' "$GPIO" 2>/dev/null ||
 grep -Eq 'gpio-12.*[|]GPIO Key R1[[:space:]]*[)][[:space:]]+in[[:space:]]+lo([[:space:]]|$)' "$GPIO" 2>/dev/null
