@@ -18,7 +18,7 @@ valid_id() {
 
 valid_target() {
   case "$1" in
-    ''|.|..|/*|*'..'*|*'|'*|*[!A-Za-z0-9._-]*) return 1 ;;
+    ''|.|..|/*|*'..'*|*'|'*|*[!A-Za-z0-9._ -]*) return 1 ;;
     *) [ "${#1}" -le 64 ] ;;
   esac
 }
@@ -593,6 +593,24 @@ apply_map() {
     add_alias "$ap_root" "$ap_config" "$ap_frontend_config" "$ap_state"
   fi
   [ -z "$ap_userdata" ] || [ -z "$4" ] || add_alias "$ap_root" "$ap_userdata" "$4" "$ap_state"
+  # Every other top-level directory shipped by this frontend is private by
+  # default. Expose it at the card-root path expected by legacy frontends,
+  # while keeping its source inside this frontend bundle. Shared roots and
+  # BaseOS-managed compatibility paths are handled explicitly above.
+  for ap_private_dir in "$ap_program"/* "$ap_program"/.[!.]* "$ap_program"/..?*; do
+    [ -d "$ap_private_dir" ] && [ ! -L "$ap_private_dir" ] || continue
+    ap_private_name=${ap_private_dir##*/}
+    case "$ap_private_name" in
+      .baseos|.userdata|Games|games|Roms|ROMs|roms|Saves|saves|Bios|BIOS|bios|Cheats|cheats|Overlays|overlays|Shaders|shaders|Config|config|.system|SYSTEM|System|Tools|tools|Emus|emus)
+        continue
+        ;;
+    esac
+    valid_target "$ap_private_name" || {
+      log "skipping private directory with unsupported name: $ap_private_name"
+      continue
+    }
+    add_alias "$ap_root" "$ap_private_name" "$ap_private_dir" "$ap_state"
+  done
   if [ -n "$ap_cores" ]; then
     ap_core_platform=$(core_platform "$ap_cores" || :)
     if [ -n "$ap_core_platform" ]; then
