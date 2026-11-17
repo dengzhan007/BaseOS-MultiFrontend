@@ -146,9 +146,56 @@ static int key_is_down(int key)
 
 static int boot_selector_held(void)
 {
-    if (!open_inputs()) return 0;
-    int held = key_is_down(BTN_WEST) || key_is_down(BTN_Z);
-    close_inputs();
+    DIR *dir = opendir("/dev/input");
+    struct dirent *de;
+    FILE *diag = fopen("/data/baseos-input-boot.log", "a");
+    int held = 0;
+
+    if (diag) {
+        fprintf(diag, "\\n=== boot input probe ===\\n");
+        fflush(diag);
+    }
+    if (!dir) {
+        if (diag) { fprintf(diag, "opendir /dev/input failed: %s\\n", strerror(errno)); fclose(diag); }
+        return 0;
+    }
+
+    while ((de = readdir(dir)) != NULL) {
+        char path[FIELD], name[256] = "unknown";
+        unsigned long keybits[(KEY_MAX + 8 * sizeof(unsigned long)) /
+                              (8 * sizeof(unsigned long))];
+        unsigned long state[(KEY_MAX + 8 * sizeof(unsigned long)) /
+                            (8 * sizeof(unsigned long))];
+        int fd, has_west, has_z, down_west = 0, down_z = 0;
+
+        if (strncmp(de->d_name, "event", 5) != 0) continue;
+        if (snprintf(path, sizeof(path), "/dev/input/%s", de->d_name) >=
+            (int)sizeof(path)) continue;
+        fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        if (fd < 0) {
+            if (diag) fprintf(diag, "%s open failed: %s\\n", path, strerror(errno));
+            continue;
+        }
+        memset(keybits, 0, sizeof(keybits));
+        memset(state, 0, sizeof(state));
+        (void)ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+        int caps_ok = ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) >= 0;
+        has_west = caps_ok && bit_set(keybits, BTN_WEST);
+        has_z = caps_ok && bit_set(keybits, BTN_Z);
+        int state_ok = ioctl(fd, EVIOCGKEY(sizeof(state)), state) >= 0;
+        if (state_ok) {
+            down_west = bit_set(state, BTN_WEST);
+            down_z = bit_set(state, BTN_Z);
+        }
+        if (diag)
+            fprintf(diag, "%s name=%.120s caps=%s L1(BTN_WEST)=%d/%d R1(BTN_Z)=%d/%d\\n",
+                    de->d_name, name, caps_ok ? "ok" : "error",
+                    has_west, down_west, has_z, down_z);
+        if ((has_west && down_west) || (has_z && down_z)) held = 1;
+        close(fd);
+    }
+    closedir(dir);
+    if (diag) { fprintf(diag, "selector_held=%d\\n", held); fclose(diag); }
     return held;
 }
 
