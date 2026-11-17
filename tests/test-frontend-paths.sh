@@ -231,4 +231,23 @@ sh "$HELPER" cleanup "$PRIVATE_CARD" || fail "generic private-directory cleanup 
 [ -f "$PRIVATE_PROGRAM/Artwork Cache/themes/default/theme.cfg" ] || fail "generic private cleanup modified original frontend data"
 [ -f "$PRIVATE_PROGRAM/runtime-data/profiles/default.ini" ] || fail "generic cleanup deleted nested frontend data"
 
+# Per-frontend config can map a differently named private directory
+# onto a canonical shared root without changing the frontend package.
+mkdir -p "$PRIVATE_PROGRAM/media/overlay-packs" "$PRIVATE_CARD/Overlays"
+printf '%s\\n' "frontend-media" > "$PRIVATE_PROGRAM/media/overlay-packs/custom.png"
+printf '%s\\n' "shared-existing" > "$PRIVATE_CARD/Overlays/existing.png"
+printf '%s\\n' 'shared_map=media:Overlays' >> "$PRIVATE_MAP"
+sh "$HELPER" apply "$PRIVATE_CARD" "$PRIVATE_PROGRAM" "$PRIVATE_MAP" "$PRIVATE_USERDATA" "$PRIVATE_INSTANCE" || \\
+  fail "custom private-to-shared mapping failed"
+[ -L "$PRIVATE_CARD/media" ] || fail "custom shared alias was not created"
+[ "$(readlink "$PRIVATE_CARD/media")" = "$PRIVATE_CARD/Overlays" ] || \\
+  fail "custom shared alias points to the wrong canonical directory"
+[ -f "$PRIVATE_CARD/media/existing.png" ] || fail "custom alias cannot see existing shared data"
+sh "$HELPER" cleanup "$PRIVATE_CARD" || fail "custom shared mapping cleanup failed"
+[ ! -L "$PRIVATE_CARD/media" ] || fail "custom shared alias survived cleanup"
+[ -f "$PRIVATE_PROGRAM/media/overlay-packs/custom.png" ] || \\
+  fail "custom shared mapping cleanup modified original frontend data"
+[ -f "$PRIVATE_CARD/Overlays/existing.png" ] || \\
+  fail "custom shared mapping cleanup modified shared data"
+
 echo "PASS: BaseOS path maps share frontend cores and preserve legacy ROM paths"
