@@ -18,9 +18,12 @@ valid_id() {
 
 valid_target() {
   case "$1" in
-    ''|.|..|/*|*'..'*|*'|'*|*[!A-Za-z0-9._\ -]*) return 1 ;;
-    *) [ "${#1}" -le 64 ] ;;
+    ''|.|..|/*|*..*) return 1 ;;
   esac
+  [ "${#1}" -le 64 ] || return 1
+  # Keep spaces in legitimate frontend directory names, but reject path
+  # separators and shell metacharacters before using the name as an alias.
+  printf '%s\\n' "$1" | grep -Eq '^[A-Za-z0-9._ -]+$'
 }
 
 valid_core_target() {
