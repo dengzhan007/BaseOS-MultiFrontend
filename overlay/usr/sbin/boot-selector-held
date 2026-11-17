@@ -4,5 +4,5 @@
 GPIO="${BASEOS_GPIO_DEBUG:-/sys/kernel/debug/gpio}"
 [ -r "$GPIO" ] || exit 1
 
-grep -Eq 'gpio-10[[:space:]]+\\([^)]*\\|GPIO Key L1[[:space:]]*\\)[[:space:]]+in[[:space:]]+lo([[:space:]]|$)' "$GPIO" 2>/dev/null ||
-grep -Eq 'gpio-12[[:space:]]+\\([^)]*\\|GPIO Key R1[[:space:]]*\\)[[:space:]]+in[[:space:]]+lo([[:space:]]|$)' "$GPIO" 2>/dev/null
+grep -Eq 'gpio-10.*\\|GPIO Key L1[[:space:]]*\\).*in[[:space:]]+lo([[:space:]]|$)' "$GPIO" 2>/dev/null ||
+grep -Eq 'gpio-12.*\\|GPIO Key R1[[:space:]]*\\).*in[[:space:]]+lo([[:space:]]|$)' "$GPIO" 2>/dev/null
