@@ -115,7 +115,7 @@ grep -Fq '::respawn:/sbin/frontend-session' "$INITTAB" || fail "inittab does not
 # or R1 enters it. MENU-triggered USB storage keeps priority in rcS.
 CONTROL_CENTER="$HERE/src/baseos-control-center.c"
 RCS="$HERE/overlay/etc/init.d/rcS"
-grep -Fq 'key_is_down(BTN_TL) || key_is_down(BTN_TR)' "$CONTROL_CENTER" \
+grep -Fq 'key_is_down(BTN_WEST) || key_is_down(BTN_Z)' "$CONTROL_CENTER" \
   || fail "boot selector must accept L1 OR R1, not require both"
 grep -Fq '/usr/sbin/baseos-control-center --boot-held' "$RCS" \
   || fail "rcS does not sample the shoulder selector request"
