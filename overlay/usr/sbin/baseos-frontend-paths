@@ -238,6 +238,12 @@ scan_map() {
   [ -d "$sm_program/overlays" ] && sm_overlays=overlays
   sm_shaders=Shaders
   [ -d "$sm_program/shaders" ] && sm_shaders=shaders
+  # A bundled frontend overlay directory is private by default. Users can
+  # switch share_overlays=yes in the generated map to opt into the shared root.
+  sm_share_overlays=yes
+  if [ -d "$sm_program/$sm_overlays" ] && [ ! -L "$sm_program/$sm_overlays" ]; then
+    sm_share_overlays=no
+  fi
 
   sm_cores=
   # Select only a platform directory actually present in this frontend bundle.
@@ -265,7 +271,7 @@ scan_map() {
     printf 'cheats_target=%s\n' "$sm_cheats"
     printf 'overlays_target=%s\n' "$sm_overlays"
     printf 'shaders_target=%s\n' "$sm_shaders"
-    printf '%s\n' 'share_bios=yes' 'share_cheats=yes' 'share_overlays=yes' 'share_shaders=yes'
+    printf '%s\n' 'share_bios=yes' 'share_cheats=yes' "share_overlays=$sm_share_overlays" 'share_shaders=yes'
     [ -z "$sm_system" ] || printf 'system_target=%s\n' "$sm_system"
     [ -z "$sm_tools" ] || printf 'tools_target=%s\n' "$sm_tools"
     [ -z "$sm_emus" ] || printf 'emus_target=%s\n' "$sm_emus"
@@ -530,8 +536,15 @@ apply_map() {
       mkdir -p "$ap_cheats_source" || return 1
     fi
     if [ "$ap_share_overlays" = no ]; then
-      ap_overlays_source=$4/assets/overlays
-      mkdir -p "$ap_overlays_source" || return 1
+      if [ -n "$ap_overlays" ] && [ -d "$ap_program/$ap_overlays" ] &&
+         [ ! -L "$ap_program/$ap_overlays" ]; then
+        # Keep bundled frontend overlays in place; expose them at the legacy
+        # card-root path without copying or modifying the frontend package.
+        ap_overlays_source=$ap_program/$ap_overlays
+      else
+        ap_overlays_source=$4/assets/overlays
+        mkdir -p "$ap_overlays_source" || return 1
+      fi
     fi
     if [ "$ap_share_shaders" = no ]; then
       ap_shaders_source=$4/assets/shaders
