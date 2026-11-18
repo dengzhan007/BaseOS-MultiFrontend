@@ -250,6 +250,10 @@ evaluate() {
 	# when its build string is unchanged.
 	if version_newer "$EV_VERSION" "${BASEOS_VERSION:-0}"; then
 		:
+	elif [ "${2:-0}" = 1 ]; then
+		# Strict pass: only a strictly newer version counts, so a same-build
+		# rebuild sitting beside it cannot win the choice.
+		EV_REASON="not newer than the running ${BASEOS_VERSION:-?}"; return 1
 	elif [ "$EV_VERSION" = "${BASEOS_VERSION:-}" ] &&
 	     { [ "$EV_BUILD" != "${BASEOS_BUILD:-}" ] ||
 	       ! grep -q "^$EV_SHA " "$HISTORY" 2>/dev/null; }; then
@@ -270,17 +274,24 @@ evaluate() {
 # a stale payload the user left behind must not mask the new one beside it.
 select_payload() {
 	CHOSEN=""; REJECTED=0
-	for dir in $DIRS; do
-		[ -z "$CHOSEN" ] || break
-		for candidate in "$dir"/*.bosupd; do
-			[ -f "$candidate" ] || continue
-			evaluate "$candidate"; verdict=$?
-			if [ "$verdict" -eq 0 ]; then CHOSEN="$candidate"; break; fi
-			if [ "$verdict" -eq 2 ]; then
-				update_log "$candidate rejected: $EV_REASON"
-				REJECTED=1
-			fi
+	# Two passes. The first accepts only a strictly newer version, so an older
+	# payload on the same card cannot mask a newer one — including a rebuild of
+	# the running version, which the second pass is there to apply when nothing
+	# newer is on the card.
+	for strict in 1 0; do
+		for dir in $DIRS; do
+			[ -z "$CHOSEN" ] || break
+			for candidate in "$dir"/*.bosupd; do
+				[ -f "$candidate" ] || continue
+				evaluate "$candidate" "$strict"; verdict=$?
+				if [ "$verdict" -eq 0 ]; then CHOSEN="$candidate"; break; fi
+				if [ "$verdict" -eq 2 ]; then
+					update_log "$candidate rejected: $EV_REASON"
+					REJECTED=1
+				fi
+			done
 		done
+		[ -z "$CHOSEN" ] || break
 	done
 	[ -n "$CHOSEN" ]
 }

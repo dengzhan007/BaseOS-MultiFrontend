@@ -340,9 +340,10 @@ EOF
   echo "ok"
 
   echo "== a payload matching the running build is skipped =="
-  # A payload whose version and build match the running system is skipped
-  # outright, so the file left on the card is inert from the first boot after an
-  # update — before anything has been confirmed.
+  # A payload the running card has already booted is skipped outright, so a copy
+  # left on the card is inert from the first boot after an update — before
+  # anything has been confirmed. What marks it as applied is the history written
+  # at commit, not the build string: a rebuild can keep the same build string.
   reset; make_payload rg40xxv "$SLOT_SECTORS" clean
   cat > /etc/baseos-release <<EOF
 BASEOS=1
@@ -350,6 +351,9 @@ BASEOS_VERSION=1.0.1
 BASEOS_BUILD=test
 BASEOS_TARGET=rg40xxv
 EOF
+  mkdir -p /data/update
+  printf "%s 1.0.1 test\n" \
+    "$(sha256sum /tmp/pay/slot.img | cut -d" " -f1)" > /data/update/history
   baseos-update apply
   no_flip "payload equals the running build"
   echo "ok: no reboot loop on the first boot after an update"
