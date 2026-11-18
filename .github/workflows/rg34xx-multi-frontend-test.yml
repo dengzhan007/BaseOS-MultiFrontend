@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - "test/rg34xx-multi-frontend"
-    # Workflow-only maintenance commits must not interrupt a running image build.
-    paths-ignore:
-      - ".github/workflows/rg34xx-multi-frontend-test.yml"
   workflow_dispatch:
 
 permissions:
@@ -39,6 +36,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y zip zstd qemu-system-aarch64 cpio shellcheck file
+
+      - name: Prepare Alpine build image
+        run: |
+          set -eu
+          # The build scripts use this historical local tag. GitHub-hosted
+          # runners are clean, so provide it from the public Alpine image.
+          docker pull alpine:3.20
+          docker tag alpine:3.20 baseos-alpine-cn:3.20
+          docker image inspect baseos-alpine-cn:3.20 >/dev/null
 
       - name: Validate H700 multi-frontend logic
         run: |
