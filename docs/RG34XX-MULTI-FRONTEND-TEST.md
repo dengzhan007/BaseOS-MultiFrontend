@@ -78,11 +78,25 @@ BaseOS 先扫描当前启动使用的用户数据卡中的 `Frontends/`，并读
 | BIOS、cheats、overlays、shaders 等素材 | 按路径映射策略配置；默认不把未知目录强行共享 |
 | 前端程序 payload | 同一 package 的 profile 之间共享 |
 
-BaseOS 会为需要旧目录名称的前端创建运行时路径映射，例如把前端要求的 `Roms/` 指向共享的 `Games/`，把 profile 私有配置/素材指向对应 instance。路径别名由 BaseOS 在前端会话结束时清理。
+BaseOS 使用一组固定的**规范公共目录**作为共享数据的实际存放位置，并允许每个前端继续使用自己原本认识的目录名称。路径映射配置中的 `*_target` 项就是前端侧的目录名称；对应的 `share_*` 项决定该项目是否接入规范公共目录。
 
-每个前端还有一份独立的 BaseOS 路径映射配置，保存在活动数据卡的 `.baseos/frontend-paths/<frontend-id>.conf`。首次扫描时自动生成；后续扫描不会覆盖用户修改。配置按前端 ID 区分，同一前端的不同 profile 共用这份目录映射规则，但各自的 profile userdata 仍然隔离。
+例如，规范遮罩目录是 TF 卡根目录的 `Overlays/`。如果前端 1 的源码固定读取 `Overlay/`（单数），前端 2 读取 `Overlays/`（复数），两者都要共享同一套遮罩，则分别配置：
 
-默认情况下，前端包中的普通顶层目录（包括隐藏目录）都按私有目录处理，运行时映射回该前端自己的目录。若某个前端使用不同的目录名称，但希望接入 BaseOS 公共目录，可在该前端自己的配置文件中增加一个或多个 `shared_map`：
+```ini
+# 前端 1：保留它原本读取的目录名，映射到公共 Overlays
+overlays_target=Overlay
+share_overlays=yes
+
+# 前端 2：它使用的名称刚好就是规范目录名
+overlays_target=Overlays
+share_overlays=yes
+```
+
+BaseOS 会在前端会话期间把前端 1 所需的根目录入口 `Overlay/` 映射到规范目录 `Overlays/`；前端 2 则直接使用规范目录 `Overlays/`。因此，两个前端实际读写的是同一份文件。遮罩文件应放在 TF 卡根目录的 `Overlays/`，而不是某个前端程序目录中。其他支持的规范公共目录也遵循同一思路，例如 `Roms/` 可以映射到 `Games/`。
+
+每个前端有一份独立的 BaseOS 路径映射配置，保存在活动数据卡的 `.baseos/frontend-paths/<frontend-id>.conf`。首次扫描时自动生成；后续扫描不会覆盖用户修改。配置按前端 ID 区分，同一前端的不同 profile 共用这份目录映射规则，但各自的 profile userdata 仍然隔离。编辑时应修改对应前端 ID 的配置文件，而不是修改前端程序目录。
+
+默认情况下，前端包中的普通顶层目录（包括隐藏目录）都按私有目录处理，运行时映射回该前端自己的目录。对于不属于标准路径项目、但希望映射到公共目录的前端目录，可在该前端自己的配置文件中增加一个或多个 `shared_map`：
 
 ```ini
 # 前端的 media 目录映射到 BaseOS 公共 Overlays
@@ -92,7 +106,7 @@ shared_map=media:Overlays
 shared_map=cheatfiles:Cheats
 ```
 
-格式为 `shared_map=<前端私有目录名>:<BaseOS公共目录名>`。目前公共目标限定为 `Games`、`Saves`、`Bios`、`Cheats`、`Overlays` 和 `Shaders`。映射源目录必须存在于该前端包内；未声明的目录仍保持私有。BaseOS 只创建会话期间的目录别名/挂载，不搬移或删除源文件；已有的非空卡根同名目录会受到保护，冲突时不会强行覆盖。
+格式为 `shared_map=<前端包内目录名>:<BaseOS公共目录名>`。目前公共目标限定为 `Games`、`Saves`、`Bios`、`Cheats`、`Overlays` 和 `Shaders`。映射源目录必须存在于该前端包内；未声明的目录仍保持私有。BaseOS 只创建会话期间的目录别名/挂载，不搬移或删除源文件；已有的非空卡根同名目录会受到保护，冲突时不会强行覆盖。若目标名称与规范目录名称仅大小写不同（例如 FAT/exFAT 上的 `Overlay` 与 `Overlays` 不同，不是仅大小写差异），按正常名称映射处理；大小写仅有差异时不会重复创建别名。
 
 ## 构建与下载
 
