@@ -53,7 +53,7 @@ jobs:
           test "$host_arch" = amd64
           echo "Prepared device build image architecture: $arm64_arch"
           echo "Prepared QEMU host image architecture: $host_arch"
-          docker image ls --digests baseos-alpine-cn:3.20 baseos-alpine-cn:3.20-host
+          docker image ls --digests baseos-alpine-cn
 
       - name: Validate H700 multi-frontend logic
         run: |
