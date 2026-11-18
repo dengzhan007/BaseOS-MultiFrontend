@@ -40,17 +40,20 @@ jobs:
       - name: Prepare Alpine build image
         run: |
           set -eu
-          # The build scripts use this historical local tag. GitHub-hosted
-          # runners are clean, so provide it from the public Alpine image.
-          # build-tools.sh always runs containers with --platform linux/arm64.
-          # Pull that exact platform; an amd64-only local tag is not a match,
-          # so Docker otherwise tries to pull the private historical tag.
+          # Build scripts need two local tags: ARM64 for static device tools,
+          # and the runner-native platform for the QEMU smoke-test container.
+          # GitHub-hosted runners are clean, so provide both from public Alpine.
+          docker pull --platform linux/amd64 alpine:3.20
+          docker tag alpine:3.20 baseos-alpine-cn:3.20-host
           docker pull --platform linux/arm64 alpine:3.20
           docker tag alpine:3.20 baseos-alpine-cn:3.20
-          image_arch="$(docker image inspect --format '{{.Architecture}}' baseos-alpine-cn:3.20)"
-          test "$image_arch" = arm64
-          echo "Prepared build image architecture: $image_arch"
-          docker image ls --digests baseos-alpine-cn:3.20
+          arm64_arch="$(docker image inspect --format '{{.Architecture}}' baseos-alpine-cn:3.20)"
+          host_arch="$(docker image inspect --format '{{.Architecture}}' baseos-alpine-cn:3.20-host)"
+          test "$arm64_arch" = arm64
+          test "$host_arch" = amd64
+          echo "Prepared device build image architecture: $arm64_arch"
+          echo "Prepared QEMU host image architecture: $host_arch"
+          docker image ls --digests baseos-alpine-cn:3.20 baseos-alpine-cn:3.20-host
 
       - name: Validate H700 multi-frontend logic
         run: |
