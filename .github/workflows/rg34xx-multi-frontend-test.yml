@@ -42,9 +42,13 @@ jobs:
           set -eu
           # The build scripts use this historical local tag. GitHub-hosted
           # runners are clean, so provide it from the public Alpine image.
-          docker pull alpine:3.20
+          # build-tools.sh always runs containers with --platform linux/arm64.
+          # Pull that exact platform; an amd64-only local tag is not a match,
+          # so Docker otherwise tries to pull the private historical tag.
+          docker pull --platform linux/arm64 alpine:3.20
           docker tag alpine:3.20 baseos-alpine-cn:3.20
-          docker image inspect baseos-alpine-cn:3.20 >/dev/null
+          docker image inspect --platform linux/arm64 baseos-alpine-cn:3.20 >/dev/null
+          docker image ls --digests baseos-alpine-cn:3.20
 
       - name: Validate H700 multi-frontend logic
         run: |
