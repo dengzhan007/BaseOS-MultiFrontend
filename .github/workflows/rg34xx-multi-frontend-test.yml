@@ -47,7 +47,9 @@ jobs:
           # so Docker otherwise tries to pull the private historical tag.
           docker pull --platform linux/arm64 alpine:3.20
           docker tag alpine:3.20 baseos-alpine-cn:3.20
-          docker image inspect --platform linux/arm64 baseos-alpine-cn:3.20 >/dev/null
+          image_arch="$(docker image inspect --format '{{.Architecture}}' baseos-alpine-cn:3.20)"
+          test "$image_arch" = arm64
+          echo "Prepared build image architecture: $image_arch"
           docker image ls --digests baseos-alpine-cn:3.20
 
       - name: Validate H700 multi-frontend logic
