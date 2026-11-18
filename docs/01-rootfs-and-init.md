@@ -195,8 +195,8 @@ and `/etc/hosts` link to those generated files. See
   enabled.
 - `/mnt/vendor/ctrl/setBluetooth.sh` provides the vendor-compatible Bluetooth
   initialization interface.
-- `poweroff` and `reboot` go through BaseOS shutdown wrappers; see
-  [power handling](05-runtime-power-network.md).
+- `poweroff` and `reboot` go through BaseOS wrappers, which own the PMIC
+  handover; see [power handling](05-runtime-power-network.md).
 
 `/etc/baseos-release` includes the exact target, frontend family, model string,
 panel rotation, version and build. The `dmenu.bin` model-string stub supports

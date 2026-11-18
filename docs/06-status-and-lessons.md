@@ -17,7 +17,7 @@ QEMU smoke test does not prove hardware support on every target.
 | USB mass storage | RG40XX V TF1 data partition | Whole TF2 with real cards |
 | HDMI | RG40XX V hotplug in both directions | Per-target validation |
 | Bluetooth audio | Daemon startup | Pairing and playback |
-| A/B updates | RG40XX V slot flip, slot B boot, `/data` persistence and trial confirmation | Hardware rollback after failed boots |
+| A/B updates | RG40XX V: slot flip, slot B boot, `/data` persistence and trial confirmation. RG34XX: an updater restart into the written slot from a host-attached card, with trial confirmation | Hardware rollback after failed boots |
 | GPT visibility attributes | RG40XX V boot | Windows drive-letter and format-prompt behavior |
 | Charger-only boot and PMIC shutdown | RG SP; POWER-hold startup on RG34XX SP | Per-target charging and power behavior |
 | Hostname and mDNS | RG34XX SP network validation | Per-target and host-network compatibility |

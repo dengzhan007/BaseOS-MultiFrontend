@@ -88,9 +88,11 @@ The updater then:
 4. flips GPT partition 5 to the verified slot;
 5. appends `<sha> <version> <build>` to `/data/update/history`, writes trial
    state to `/data/update/state` and flushes;
-6. deletes the applied payload, flushes and reboots. If the payload volume is
-   read-only, the updater remounts it writable for the delete, then restores it
-   to read-only.
+6. deletes the applied payload, flushes, and restarts through `baseos-reboot`,
+   which asks the PMIC for the reset instead of walking the kernel's shutdown
+   path; see [power handling](05-runtime-power-network.md). If the payload
+   volume is read-only, the updater remounts it writable for the delete, then
+   restores it to read-only.
 
 If a write or verification fails before the GPT flip, the active slot stays
 selected. The inactive slot and diagnostic logs may already have changed, so

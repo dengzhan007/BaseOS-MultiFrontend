@@ -126,26 +126,40 @@ See [validation coverage](06-status-and-lessons.md) for hardware checks.
 ## 5. Power button and shutdown
 
 BaseOS provides `poweroff` and `reboot` wrappers. `baseos-poweroff` creates
-`/run/poweroff-requested`, and `baseos-reboot` clears it. Both then call
-BusyBox to request shutdown through init.
+`/run/poweroff-requested`, and `baseos-reboot` clears it.
 
-`rcK` stops other processes, saves entropy, disables swap and flushes writes.
-For power-off it calls `axp-off --now`, which requires persistent filesystems
-to be read-only before it cuts processor power through the PMIC. Reboot skips
-the PMIC cut. If the PMIC helper refuses, shutdown falls back to BusyBox's
-kernel path after filesystem cleanup.
+`baseos-poweroff` hands over to BusyBox, and `rcK` stops other processes, saves
+entropy, disables swap and flushes writes. For power-off `rcK` then calls
+`axp-off --now`, which requires persistent filesystems to be read-only before
+it cuts processor power through the PMIC. If the PMIC helper refuses, shutdown
+falls back to BusyBox's kernel path after filesystem cleanup.
 
-`baseos-reboot` restarts through the PMIC rather than through the kernel: it
-clears the marker, syncs, and writes the PMIC's restart bit, which is the same
-reset the reset button performs. The kernel's own restart does not come back on
-this hardware — the panel stays dark, the power LED goes out and even POWER does
-nothing until the reset button, with or without a USB host attached. A shutdown
-step that unmounts or remounts the card blocks, and because init waits for
-`rcK` the kernel never reaches `machine_restart` at all; once it is inside that
-path, `sysrq-trigger` cannot recover it either. BusyBox's reboot stays as the
-fallback for a board where the PMIC write does not take effect. This matters
-most after an update, when the slot has already been flipped and only a restart
-can boot the new system.
+`baseos-reboot` does not go through init at all: it clears the marker, syncs,
+and writes the PMIC's restart bit — the same reset the reset button performs.
+The kernel's own restart does not come back on this hardware: the panel stays
+dark, the power LED goes out, and even POWER does nothing until the reset
+button, with or without a USB host attached. A shutdown step that unmounts or
+remounts the card blocks, and because init waits for `rcK` the kernel never
+reaches `machine_restart`; once it is inside that path, `sysrq-trigger` cannot
+recover it either. BusyBox's reboot stays as the fallback for a board where the
+PMIC write does not take effect.
+
+```
+axp-off                # read-only probe: prints the PMIC and REG27H
+axp-off --restart      # sync first; the PMIC resets within a second
+axp-off --now          # power off, after flushing and read-only remounts
+```
+
+`--restart` writes REG 0x27 bit 1 and retries the transfer, because the kernel's
+`axp20x` driver still owns that bus and its regmap can be mid-transaction. The
+attempts are appended to `/data/axp-restart.log`, but a successful restart cuts
+the rails before those pages reach the card: a missing file is the expected
+outcome, not a failure.
+
+This matters most after an update, when the slot has already been flipped and
+only a restart boots the new system. A frontend that restarts through its own
+helper — NextUI's `reboot_next` — keeps its own path; when that helper fails and
+the frontend falls back to a bare `reboot`, it lands on the BaseOS wrapper.
 
 Frontends should use the BaseOS commands so that shutdown intent and cleanup
 are kept. Calling BusyBox applets directly, or using frontend-specific helpers,
