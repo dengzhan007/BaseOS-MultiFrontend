@@ -98,7 +98,7 @@ baseos_frontend_load_package() {
     esac
     baseos_frontend_read_value "$bfl_manifest" compat_mode ""
     case "$BASEOS_VALUE" in
-      script-package|script-pak|script-card|script-runtime|binary-card|binary-package) ;;
+      script-package|script-pak|script-card|script-runtime|binary-card|binary-package|zip-card) ;;
       *) return 1 ;;
     esac
     [ -f "$BASEOS_COMPAT_PROGRAM_DIR/$BASEOS_COMPAT_ENTRYPOINT" ] &&

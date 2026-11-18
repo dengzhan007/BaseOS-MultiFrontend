@@ -45,6 +45,17 @@ QEMU smoke test does not prove hardware support on every target.
   rather than their synthetic file sizes. See [USB access](08-usb-adb-and-otg.md).
 - Growing a partition while a sibling is mounted requires `BLKPG`, which
   `gptgrow` uses. See [storage expansion](03-first-boot-and-expand.md).
+- A restart that goes through the kernel never comes back on this hardware: the
+  panel stays dark, the power LED goes out, and holding POWER does nothing
+  until the reset button. `umount` and `remount` of the card block during
+  shutdown, so `rcK` never returns and init never reaches `machine_restart`;
+  once the kernel is inside its shutdown path, `sysrq-trigger` cannot recover
+  it either. `baseos-reboot` now asks the PMIC for the restart, which is the
+  reset the button performs and owes nothing to that path. Measured on RG34XX
+  with a host attached: ten consecutive restarts, then an updater restart into
+  a freshly written slot, all returning to the frontend untouched, with no new
+  `FSCK` record on the card. See
+  [the restart record](../experiments/h700-boot-speed/evidence/rg40xxv-plain-restart.txt).
 
 ## 3. Development validation
 
@@ -58,11 +69,6 @@ the relevant subsystem document for its acceptance criteria.
 ## 4. Open work
 
 - Make the rootfs read-only after initialization to reduce damage from power loss.
-- On an RG40XX V connected to a computer over USB, a plain restart (`reboot`,
-  which the updater also uses) leaves the screen blank until reset. Release
-  1.3.0 does the same. Holding POWER does not help, but reset does. Which
-  shutdown step causes it is unknown. See
-  [the restart record](../experiments/h700-boot-speed/evidence/rg40xxv-plain-restart.txt).
 - Complete the remaining hardware checks above across supported H700 models.
 - Define a `/data` schema migration before storing state that cannot be
   regenerated.

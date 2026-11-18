@@ -29,7 +29,10 @@ mkdir -p "$TOOLS"
 # Do not let an obsolete reconnect helper linger in a reused tools directory.
 rm -f "$TOOLS/usb-gadget-watch"
 
-docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
+if [ -x "$TOOLS/busybox" ] && [ -x "$TOOLS/dropbearmulti" ]; then
+  echo "reusing tools: busybox dropbearmulti"
+else
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out baseos-alpine-cn:3.20 sh -euc '
   apk add -q busybox-static
   cp /bin/busybox.static /out/busybox
 
@@ -43,11 +46,15 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out al
   cp dropbearmulti /out/dropbearmulti
   chmod 755 /out/busybox /out/dropbearmulti
 '
+fi
 
 # curl: NextUI's HTTP layer invokes the CLI for RetroAchievements. Build it in
 # a clean container so it cannot inherit configure state from another tool.
 # The pinned static binary carries no StockMod or frontend ABI dependency.
-docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
+if [ -f "$TOOLS/ca-certificates.crt" ] && [ -x "$TOOLS/curl" ]; then
+  echo "reusing tools: ca-certificates.crt curl"
+else
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base ca-certificates tar xz perl \
     openssl-dev openssl-libs-static zlib-dev zlib-static
   CURL_VERSION=8.21.0
@@ -70,21 +77,29 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out al
   cp /etc/ssl/certs/ca-certificates.crt /out/ca-certificates.crt
   chmod 755 /out/curl
 '
+fi
 
 # fbsplash: framebuffer boot splash (Lexend wordmark via freetype).
+if [ -x "$TOOLS/fbsplash" ]; then
+  echo "reusing tools: fbsplash"
+else
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
-  -v "$TOOLS":/out -v "$HERE/src":/src:ro alpine:3.20 sh -euc '
+  -v "$TOOLS":/out -v "$HERE/src":/src:ro baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base linux-headers pkgconf \
     freetype-dev freetype-static zlib-static libpng-static bzip2-static brotli-static
   gcc -static -O2 $(pkg-config --cflags freetype2) -o /out/fbsplash /src/fbsplash.c \
     $(pkg-config --static --libs freetype2)
   strip /out/fbsplash
 '
+fi
 
 # baseos-control-center: interactive H700 framebuffer selector/diagnostics UI.
 # Like fbsplash it renders directly to fb0; H700 kernels do not provide fbcon.
+if [ -x "$TOOLS/baseos-control-center" ]; then
+  echo "reusing tools: baseos-control-center"
+else
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
-  -v "$TOOLS":/out -v "$HERE/src":/src:ro alpine:3.20 sh -euc '
+  -v "$TOOLS":/out -v "$HERE/src":/src:ro baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base linux-headers pkgconf \
     freetype-dev freetype-static zlib-static libpng-static bzip2-static brotli-static
   gcc -std=c11 -static -O2 -Wall -Wextra \
@@ -92,23 +107,31 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
     $(pkg-config --static --libs freetype2)
   strip /out/baseos-control-center
 '
+fi
 
 # gptgrow: zero-dependency static tool that grows the last GPT partition to
 # fill the card on first boot (see tools/gptgrow.c).
 # gptslot: A/B root-slot arithmetic — derives the slot geometry from the GPT
 # and flips partition 5 between the two halves (see tools/gptslot.c).
+if [ -x "$TOOLS/gptgrow" ] && [ -x "$TOOLS/gptslot" ]; then
+  echo "reusing tools: gptgrow gptslot"
+else
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
-  -v "$TOOLS":/out -v "$HERE/tools":/src:ro alpine:3.20 sh -euc '
+  -v "$TOOLS":/out -v "$HERE/tools":/src:ro baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base linux-headers
   gcc -static -O2 -o /out/gptgrow /src/gptgrow.c
   strip /out/gptgrow
   gcc -static -O2 -I/src -o /out/gptslot /src/gptslot.c
   strip /out/gptslot
 '
+fi
 
 # Early boot helpers: PMIC shutdown, charger input, timing and native acceptance.
+if [ -x "$TOOLS/axp-off" ] && [ -x "$TOOLS/baseos-regs" ] && [ -x "$TOOLS/boot-clock" ] && [ -x "$TOOLS/charger-wait" ] && [ -x "$TOOLS/native-health" ]; then
+  echo "reusing tools: axp-off baseos-regs boot-clock charger-wait native-health"
+else
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
-  -v "$TOOLS":/out -v "$HERE/src":/src:ro alpine:3.20 sh -euc '
+  -v "$TOOLS":/out -v "$HERE/src":/src:ro baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base linux-headers
   gcc -static -O2 -Wall -Wextra -o /out/axp-off /src/axp-off.c
   gcc -static -O2 -Wall -Wextra -o /out/charger-wait /src/charger-wait.c
@@ -117,12 +140,16 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   gcc -std=c11 -static -O2 -Wall -Wextra -Werror -o /out/baseos-regs /src/baseos-regs.c
   strip /out/axp-off /out/charger-wait /out/boot-clock /out/native-health /out/baseos-regs
 '
+fi
 
 # e2fsck: the vendor initramfs used to check the root filesystem on every boot.
 # BaseOS boots without it, so rcS runs this checker itself, and only when the
 # filesystem carries recorded errors. Built alone and static; nothing else from
 # e2fsprogs ships.
-docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
+if [ -x "$TOOLS/e2fsck" ]; then
+  echo "reusing tools: e2fsck"
+else
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base linux-headers ca-certificates tar xz
   E2FS_VERSION=1.47.2
   E2FS_SHA256=08242e64ca0e8194d9c1caad49762b19209a06318199b63ce74ae4ef2d74e63c
@@ -140,12 +167,16 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out al
   cp e2fsck/e2fsck /out/e2fsck
   chmod 755 /out/e2fsck
 '
+fi
 
 # sftp-server: dropbear 2024.85 ships the sftp subsystem execing
 # SFTPSERVER_PATH=/usr/libexec/sftp-server, so the transport (owned by dropbear)
 # hands each sftp session to this OpenSSH helper. It needs no crypto of its own,
 # so build it without OpenSSL and without zlib for a small static binary.
-docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out alpine:3.20 sh -euc '
+if [ -x "$TOOLS/sftp-server" ]; then
+  echo "reusing tools: sftp-server"
+else
+docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base linux-headers ca-certificates zlib-dev zlib-static
   OPENSSH_VERSION=10.4p1
   OPENSSH_SHA256=ef6026dd2aea8d56059638d5d3262902c892ceba9f88395835e0d06d3fb63238
@@ -160,6 +191,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out al
   cp sftp-server /out/sftp-server
   chmod 755 /out/sftp-server
 '
+fi
 
 # adbd: Android adb daemon (android-tools 4.2.2+git20130218). Built static for
 # musl, out-of-tree via the Debian adbd makefile, exactly as Buildroot drives it
@@ -167,8 +199,11 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out al
 # source tree, apply the Debian quilt series, then apply the Buildroot patch
 # series plus the BaseOS-local patches (see src/adbd-patches). The result serves
 # adb over USB FunctionFS only (no network listener) and stays root.
+if [ -x "$TOOLS/adbd" ]; then
+  echo "reusing tools: adbd"
+else
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
-  -v "$TOOLS":/out -v "$HERE/src/adbd-patches":/patches:ro alpine:3.20 sh -euc '
+  -v "$TOOLS":/out -v "$HERE/src/adbd-patches":/patches:ro baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base linux-headers pkgconf ca-certificates tar xz patch \
     openssl-dev openssl-libs-static zlib-dev zlib-static bsd-compat-headers
   AT_VER=4.2.2+git20130218
@@ -196,12 +231,16 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   cp build-adbd/adbd /out/adbd
   chmod 755 /out/adbd
 '
+fi
 
 # avahi-daemon: fully static (musl), without D-Bus. Runtime configuration limits
 # publishing to the WiFi hostname/address records; no static service definitions
 # are shipped. Build just libdaemon's library: its legacy tests need glibc headers.
+if [ -x "$TOOLS/avahi-daemon" ]; then
+  echo "reusing tools: avahi-daemon"
+else
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
-  -v "$TOOLS":/out alpine:3.20 sh -euc '
+  -v "$TOOLS":/out baseos-alpine-cn:3.20 sh -euc '
   apk add -q build-base pkgconf \
     expat-dev expat-static libevent-dev libevent-static linux-headers
 
@@ -246,6 +285,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   cp avahi-daemon/avahi-daemon /out/avahi-daemon
   chmod 755 /out/avahi-daemon
 '
+fi
 
 file "$TOOLS/busybox" "$TOOLS/dropbearmulti" "$TOOLS/curl" \
   "$TOOLS/fbsplash" "$TOOLS/baseos-control-center" "$TOOLS/gptgrow" "$TOOLS/gptslot" "$TOOLS/sftp-server" \

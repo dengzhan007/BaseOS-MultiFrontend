@@ -15,7 +15,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$HERE":/repo:ro \
   -v "$HERE/overlay/usr/sbin/baseos-update":/baseos-update-source:ro \
   -v "$HERE/overlay/usr/share/baseos/boot-log.sh":/usr/share/baseos/boot-log.sh:ro \
-  alpine:3.20 sh -euc '
+  baseos-alpine-cn:3.20-host sh -euc '
   apk add -q python3 e2fsprogs-extra
   python3 /repo/tests/test-mkupdate.py
   # Docker masks sys/firmware. Rebind only the FDT file literal in this private
@@ -77,7 +77,7 @@ EOF
       dd if=/dev/urandom of=slot.img bs=512 count=1 conv=notrunc status=none
     fi
     gzip -c slot.img > rootfs.img.gz
-    printf "format=baseos-update/1\ntarget=%s\nversion=%s\nbuild=test\n" "$1" "$ver" > manifest
+    printf "format=baseos-update/1\ntarget=%s\nversion=%s\nbuild=%s\n" "$1" "$ver" "${6:-test}" > manifest
     printf "slot-sectors=%s\nimage-size=%s\nimage-sha256=%s\n" \
       "$2" "$SLOT_BYTES" "$sha" >> manifest
     [ "${5:-}" = keep ] || rm -f /mnt/sdcard/*.bosupd
@@ -392,6 +392,27 @@ EOF
   baseos-update apply
   no_flip "older payload"
   echo "ok: no downgrade ping-pong"
+
+  echo "== a same-build rebuild applies once and only once =="
+  # Development iteration rebuilds the running version without bumping the
+  # build id. The applied-image history alone has to stop it from repeating.
+  reset
+  cat > /etc/baseos-release <<EOF
+BASEOS=1
+BASEOS_VERSION=1.0.0
+BASEOS_BUILD=test
+BASEOS_TARGET=rg40xxv
+EOF
+  make_payload rg40xxv "$SLOT_SECTORS" clean 1.0.0 test
+  cp /mnt/sdcard/baseos-rg40xxv-1.0.0.bosupd /tmp/keep.bosupd
+  baseos-update apply
+  test -f /tmp/flip.log || { echo "FAIL: same-build rebuild was not applied" >&2; exit 1; }
+  flips=$(wc -l < /tmp/flip.log)
+  cp /tmp/keep.bosupd /mnt/sdcard/baseos-rg40xxv-1.0.0.bosupd
+  baseos-update apply
+  test "$(wc -l < /tmp/flip.log)" -eq "$flips" \
+    || { echo "FAIL: an already-applied rebuild was applied again" >&2; exit 1; }
+  echo "ok: same-build rebuild applies exactly once"
 
   echo "== a rolled-back payload is not applied again =="
   # The failure that oscillates forever if the commit is only recorded on

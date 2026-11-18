@@ -114,6 +114,23 @@ echo "ok: timeout -> bounded after $sleeps sleeps"
 [ ! -s "$TMP/count-l1" ] || fail "L1 pressed should not sleep"
 echo "ok: normal held path -> zero extra sleeps"
 
+# --- 13. Packaging contract: the script must reach the image executable ------
+# rcS guards the call with `[ -x /usr/sbin/boot-selector-held ]`. A 100644 blob
+# or a missing chmod in build-rootfs.sh makes that guard silently false: the
+# key detection never runs and the selector can never open. Assert all three
+# links in the chain so the failure cannot come back unnoticed.
+case "$(git -C "$HERE" ls-files -s overlay/usr/sbin/boot-selector-held 2>/dev/null \
+        | awk '{print $1}')" in
+  100755|100755*) : ;;
+  *) fail "boot-selector-held must be mode 100755 in git (rcS checks -x)" ;;
+esac
+grep -q 'boot-selector-held' "$HERE/build-rootfs.sh" \
+  || fail "build-rootfs.sh must mention boot-selector-held in chmod and guard lists"
+chmod_count=$(grep -c 'boot-selector-held' "$HERE/build-rootfs.sh" || true)
+[ "$chmod_count" -ge 2 ] \
+  || fail "build-rootfs.sh must chmod and guard boot-selector-held (found $chmod_count references)"
+echo "ok: boot-selector-held executable in git and in the rootfs packaging lists"
+
 echo "boot-selector-held tests passed"
 
 # Keep this test in the normal RG34XX validation sequence.

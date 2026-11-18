@@ -15,6 +15,21 @@ static inline int baseos_is_boot_selector_key(int code)
     return code == BTN_WEST || code == BTN_Z;
 }
 
+/* The same vendor device tree puts L2/R2 on BTN_SELECT/BTN_START and MENU on
+ * BTN_TL2, so a UI that binds actions to BTN_START/BTN_SELECT ends up driven by
+ * the shoulder triggers while the labelled Select/Start keys do nothing. Accept
+ * both codes: the physical key the user is told to press works, and a pad that
+ * follows the conventional mapping keeps working too. */
+static inline int baseos_is_select_key(int code)
+{
+    return code == BTN_TL || code == BTN_SELECT;
+}
+
+static inline int baseos_is_start_key(int code)
+{
+    return code == BTN_TR || code == BTN_START;
+}
+
 /*
  * Normalize controller navigation into Linux KEY_* codes. RG34XX firmware
  * may expose the D-pad as EV_KEY, BTN_DPAD_* or as EV_ABS ABS_HAT0X/Y.

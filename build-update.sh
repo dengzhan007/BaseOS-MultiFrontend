@@ -16,12 +16,12 @@ IMAGE="$WORK/baseos-$TARGET.img"
 [ -f "$IMAGE" ] || { echo "missing $IMAGE (run build-image.sh $TARGET)" >&2; exit 1; }
 
 BASEOS_VERSION="$(tr -d ' \n' < "$HERE/VERSION")"
-BASEOS_BUILD="$(git -C "$HERE" describe --always --dirty 2>/dev/null || echo unknown)"
+BASEOS_BUILD="${BASEOS_BUILD:-$(git -C "$HERE" describe --always --dirty 2>/dev/null || echo unknown)}"
 OUT="$WORK/baseos-$TARGET-$BASEOS_VERSION.bosupd"
 
 # Read filesystem metadata with the same ext4 tools used to compose the image.
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
-  -v "$WORK":/work -v "$HERE/tools":/tools:ro alpine:3.20 sh -euc '
+  -v "$WORK":/work -v "$HERE/tools":/tools:ro baseos-alpine-cn:3.20-host sh -euc '
   apk add -q python3 e2fsprogs-extra
   python3 /tools/mkupdate.py "/work/$1" "$2" "$3" "$4" "/work/$5"
 ' sh "$(basename "$IMAGE")" "$TARGET" "$BASEOS_VERSION" "$BASEOS_BUILD" "$(basename "$OUT")"

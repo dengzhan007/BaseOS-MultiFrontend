@@ -18,6 +18,15 @@ eval "$(python3 "$HERE/device_profile.py" shell "$TARGET")"
 OUT="$BASE/work/$TARGET/bootlogo.bmp"
 mkdir -p "$(dirname "$OUT")"
 
+# Reuse: the BMP is a pure function of the renderer, the font and the panel
+# geometry. Re-rendering costs a full Alpine package install for identical
+# pixels, so keep an existing artifact that is newer than all of its inputs.
+if [ -f "$OUT" ] && [ "$OUT" -nt "$BASE/src/fbsplash.c" ] \
+  && [ "$OUT" -nt "$BASE/assets/boot.ttf" ] ; then
+  echo "reusing $OUT ($(stat -c %s "$OUT") bytes)"
+  exit 0
+fi
+
 # Host-native: compiles a host test binary and writes a BMP. Explicit host
 # platform avoids a cached arm64 image on Intel.
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
@@ -25,7 +34,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -v "$BASE/work/$TARGET":/out \
   -e WIDTH="$PROFILE_BOOTLOGO_WIDTH" -e HEIGHT="$PROFILE_BOOTLOGO_HEIGHT" \
   -e ROTATION="$PROFILE_PANEL_ROTATION_CCW" \
-  alpine:3.20 sh -euc '
+  baseos-alpine-cn:3.20-host sh -euc '
   apk add -q build-base linux-headers pkgconf freetype-dev freetype-static \
     zlib-static libpng-static bzip2-static brotli-static imagemagick
   mkdir -p /usr/share/baseos && cp /assets/boot.ttf /usr/share/baseos/boot.ttf

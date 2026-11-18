@@ -58,6 +58,91 @@ is_elf_file() {
   [ "$elf_magic" = 7f454c46 ]
 }
 
+# Some frontends (NextUI/MinUI) hard-code their runtime root to
+# $SDCARD/.system/<platform> and never read anything from Frontends/<id>/, so
+# they can only run from a card-root install. Shipping an archive lets the
+# user drop the release zip in place; BaseOS expands it at the card root on
+# first launch and removes it again on uninstall.
+archive_card_payload() {
+  acp_zip=$1
+  acp_list=$(unzip -l "$acp_zip" 2>/dev/null | awk 'NF >= 4 { print $4 }')
+  acp_platform=${BASEOS_PLATFORM:-}
+  if [ -z "$acp_platform" ] && [ -r /etc/baseos-release ]; then
+    acp_platform=$(sed -n 's/^BASEOS_PLATFORM=//p' /etc/baseos-release | tr -d '"' | head -n 1)
+  fi
+  acp_entry=
+  # Release archives carry one branch per H700-family platform; only the one
+  # matching this device is a runnable entry point.
+  if [ -n "$acp_platform" ]; then
+    acp_entry=$(printf '%s\n' "$acp_list" |
+      grep -E "^\.system/$acp_platform/paks/[^/]+\.pak/launch\.sh$" |
+      head -n 1)
+  fi
+  if [ -z "$acp_entry" ]; then
+    acp_entry=$(printf '%s\n' "$acp_list" |
+      grep -E '^\.system/[^/]+/paks/[^/]+\.pak/launch\.sh$' |
+      head -n 1)
+  fi
+  [ -n "$acp_entry" ] || return 1
+  CARD_PAYLOAD_ENTRYPOINT=$acp_entry
+  return 0
+}
+
+# Record what the archive expanded to. Only frontend-private roots are listed,
+# so uninstall can delete the payload without ever touching the shared
+# Roms/Bios/Saves trees that live at the same level.
+write_payload_manifest() {
+  wpm_zip=$1 wpm_card=$2 wpm_id=$3 wpm_stat=$4 wpm_entry=$5
+  wpm_dir=$wpm_card/.baseos/payload
+  mkdir -p "$wpm_dir" || return 1
+  [ ! -L "$wpm_dir" ] || return 1
+  wpm_file=$wpm_dir/$wpm_id.conf
+  [ ! -L "$wpm_file" ] || return 1
+  wpm_tmp=$wpm_file.tmp
+  rm -f "$wpm_tmp"
+  {
+    printf '%s\n' 'payload_api=1'
+    printf 'archive=%s\n' "${wpm_zip##*/}"
+    printf 'archive_stat=%s\n' "$wpm_stat"
+    printf 'entrypoint=%s\n' "$wpm_entry"
+    unzip -l "$wpm_zip" 2>/dev/null |
+      awk 'NF >= 4 { print $4 }' |
+      sed -n 's#^\([^/][^/]*\)/.*#\1#p' |
+      sort -u |
+      while IFS= read -r wpm_path; do
+        case "$wpm_path" in
+          .system|.tmp_update|Tools) printf 'path=%s\n' "$wpm_path" ;;
+        esac
+      done
+  } > "$wpm_tmp" || return 1
+  mv -f "$wpm_tmp" "$wpm_file"
+}
+
+# Expand only this device's platform branch plus the archive's other top-level
+# trees. Release archives bundle every H700-family platform, and unpacking the
+# unused ones triples the one-off install cost on a vfat card for no benefit.
+expand_card_payload() {
+  ecp_zip=$1 ecp_card=$2
+  ecp_list=$(unzip -l "$ecp_zip" 2>/dev/null | awk 'NF >= 4 { print $4 }' | grep '/')
+  ecp_platform=${BASEOS_PLATFORM:-}
+  if [ -z "$ecp_platform" ] && [ -r /etc/baseos-release ]; then
+    ecp_platform=$(sed -n 's/^BASEOS_PLATFORM=//p' /etc/baseos-release | tr -d '"' | head -n 1)
+  fi
+  ecp_wanted=$ecp_list
+  if [ -n "$ecp_platform" ]; then
+    ecp_others=$(printf '%s\n' "$ecp_list" |
+      sed -n 's#^\.system/\([^/]*\)/paks/.*#\1#p' | sort -u |
+      grep -v -x "$ecp_platform" | tr '\n' '|' | sed 's/|*$//')
+    if [ -n "$ecp_others" ]; then
+      ecp_wanted=$(printf '%s\n' "$ecp_list" | grep -v -E "^\.system/($ecp_others)/")
+    fi
+  fi
+  # Unquoted on purpose: one archive member per argument. Release members never
+  # contain whitespace at this level.
+  # shellcheck disable=SC2086
+  unzip -o -q "$ecp_zip" $ecp_wanted -d "$ecp_card"
+}
+
 # Discover by directory structure and launch contract, never frontend name.
 resolve_entrypoint() {
   re_dir=$1
@@ -70,6 +155,18 @@ resolve_entrypoint() {
       COMPAT_MODE=script-package
       return 0
     fi
+  done
+
+  # A card-root payload archive takes precedence over an already-unpacked
+  # .system/ inside the package: the archive is what BaseOS knows how to
+  # install and uninstall, and the inline copy would resolve its runtime to
+  # the card root anyway.
+  for re_path in "$re_dir"/*.zip; do
+    [ -f "$re_path" ] && [ ! -L "$re_path" ] || continue
+    archive_card_payload "$re_path" || continue
+    COMPAT_ENTRY=${re_path#"$re_dir"/}
+    COMPAT_MODE=zip-card
+    return 0
   done
 
   for re_path in "$re_dir"/.system/h700/paks/*.pak/launch.sh; do
@@ -157,6 +254,44 @@ launch_compat() {
       cd "$lc_root" || return 126
       exec /lib/ld-linux-aarch64.so.1 "$lc_target"
       ;;
+    zip-card)
+      lc_zip=$lc_target
+      lc_payload_id=${BASEOS_PACKAGE_ID:-}
+      if [ -z "$lc_payload_id" ]; then
+        lc_payload_id=$(printf '%s' "${lc_root##*/}" | LC_ALL=C tr -c 'A-Za-z0-9._-' '-' | tr -s '-')
+      fi
+      case "$lc_payload_id" in ''|.|..|*/*|*'|'*) return 126 ;; esac
+      lc_payload_dir=$lc_card/.baseos/payload
+      [ ! -L "$lc_payload_dir" ] || return 126
+      lc_marker=$lc_payload_dir/$lc_payload_id.conf
+      lc_stat=$(stat -c '%Y:%s' "$lc_zip" 2>/dev/null || echo unknown)
+      if [ ! -f "$lc_marker" ] || [ -L "$lc_marker" ] ||
+         ! grep -qx "archive_stat=$lc_stat" "$lc_marker" 2>/dev/null; then
+        # First run, or the user replaced the release archive.
+        echo "baseos: installing ${lc_zip##*/} at the card root (one-off)" >&2
+        expand_card_payload "$lc_zip" "$lc_card" || return 126
+        archive_card_payload "$lc_zip" || return 126
+        write_payload_manifest "$lc_zip" "$lc_card" "$lc_payload_id" "$lc_stat" \
+          "$CARD_PAYLOAD_ENTRYPOINT" || return 126
+      fi
+      lc_pak=$(sed -n 's/^entrypoint=//p' "$lc_marker" 2>/dev/null | head -n 1)
+      [ -n "$lc_pak" ] || return 126
+      case "$lc_pak" in /*|*..*|*'|'*) return 126 ;; esac
+      lc_pak_path=$lc_card/$lc_pak
+      [ -f "$lc_pak_path" ] && [ ! -L "$lc_pak_path" ] || return 126
+      # Card-root frontends detect their model from /mnt/vendor/bin/dmenu.bin,
+      # which BaseOS replaces with a stub. Hand the platform model over so they
+      # do not fall back to a generic key layout and panel geometry.
+      if [ -z "${RGXX_MODEL:-}" ] && [ -r /etc/baseos-release ]; then
+        lc_model=$(sed -n 's/^BASEOS_MODEL_STRING=//p' /etc/baseos-release | tr -d '"' | head -n 1)
+        if [ -n "$lc_model" ]; then
+          RGXX_MODEL=$lc_model
+          export RGXX_MODEL
+        fi
+      fi
+      cd "$(dirname "$lc_pak_path")" || return 126
+      exec /bin/sh "$lc_pak_path"
+      ;;
     *)
       echo "unsupported compatibility launch mode: $lc_mode" >&2
       return 126
@@ -170,7 +305,7 @@ compat_needs_scan() {
   [ -f "$cns_state" ] && [ ! -L "$cns_state" ] || return 0
   # Force one rescan after upgrading to the explicit H700 entrypoint contract,
   # discovering H700-specific entrypoints without relying on directory mtimes.
-  [ "$(cat "$cns_state" 2>/dev/null)" = "frontend-compat-api=4" ] || return 0
+  [ "$(cat "$cns_state" 2>/dev/null)" = "frontend-compat-api=5" ] || return 0
   if [ -d "$cns_root/Frontends" ]; then
     [ "$cns_root/Frontends" -nt "$cns_state" ] && return 0
     for cns_dir in "$cns_root"/Frontends/*; do
@@ -285,7 +420,7 @@ scan_root() {
   fi
   state=$sr_root/.baseos/compat.scan-state
   [ ! -L "$state" ] || return 0
-  printf '%s\n' 'frontend-compat-api=4' > "$state" 2>/dev/null || :
+  printf '%s\n' 'frontend-compat-api=5' > "$state" 2>/dev/null || :
 }
 
 case "${1:-scan}" in

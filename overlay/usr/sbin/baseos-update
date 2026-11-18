@@ -244,10 +244,15 @@ evaluate() {
 	# card becomes "applicable" again the moment you update past it, so the
 	# device would downgrade, then re-apply the newer one, and ping-pong.
 	# A rebuild of the running version is still allowed, which is what makes
-	# development iteration possible.
+	# development iteration possible. That includes a rebuild that keeps the
+	# same build id: the applied-image history below is what prevents repeats,
+	# so a payload whose image never ran on this card is a genuine update even
+	# when its build string is unchanged.
 	if version_newer "$EV_VERSION" "${BASEOS_VERSION:-0}"; then
 		:
-	elif [ "$EV_VERSION" = "${BASEOS_VERSION:-}" ] && [ "$EV_BUILD" != "${BASEOS_BUILD:-}" ]; then
+	elif [ "$EV_VERSION" = "${BASEOS_VERSION:-}" ] &&
+	     { [ "$EV_BUILD" != "${BASEOS_BUILD:-}" ] ||
+	       ! grep -q "^$EV_SHA " "$HISTORY" 2>/dev/null; }; then
 		:
 	else
 		EV_REASON="not newer than the running ${BASEOS_VERSION:-?}"; return 1

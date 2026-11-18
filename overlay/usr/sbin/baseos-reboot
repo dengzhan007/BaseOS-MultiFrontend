@@ -6,11 +6,30 @@
 # that a reboot in the same session would inherit. Clearing it makes the safe
 # default an assertion rather than a coincidence.
 #
-# busybox is invoked by explicit path: the bare name resolves back to the
-# /usr/sbin/reboot shim, which would loop.
+# The restart itself asks the PMIC, not BusyBox. The kernel's own restart does
+# not come back on this hardware: the panel stays dark, the power LED goes out
+# and even POWER does nothing until the reset button, with or without a USB
+# host attached. rcK is reached and finishes — anything that unmounts or
+# remounts the card blocks and keeps init from ever reaching machine_restart,
+# and once the kernel is inside its shutdown path even sysrq cannot bring it
+# back. The PMIC's restart bit performs the same reset the button performs and
+# depends on no part of that path.
+#
+# BusyBox's reboot stays as the fallback for a board where the PMIC write does
+# not take effect.
 MARKER="${BASEOS_POWEROFF_MARKER:-/run/poweroff-requested}"
 BUSYBOX="${BASEOS_BUSYBOX:-/usr/bin/busybox}"
+AXP_OFF="${BASEOS_AXP_OFF:-/usr/sbin/axp-off}"
 
 rm -f "$MARKER"
 
+# Guarded on the real init: a test chroot runs this shim under another PID 1
+# and must never reach the host's PMIC.
+if [ -x "$AXP_OFF" ] && [ "$(readlink /proc/1/exe 2>/dev/null)" = "/usr/bin/busybox" ]; then
+	sync
+	"$AXP_OFF" --restart >/dev/null 2>&1
+fi
+
+# busybox is invoked by explicit path: the bare name resolves back to the
+# /usr/sbin/reboot shim, which would loop.
 exec "$BUSYBOX" reboot "$@"

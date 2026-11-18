@@ -135,6 +135,18 @@ to be read-only before it cuts processor power through the PMIC. Reboot skips
 the PMIC cut. If the PMIC helper refuses, shutdown falls back to BusyBox's
 kernel path after filesystem cleanup.
 
+`baseos-reboot` restarts through the PMIC rather than through the kernel: it
+clears the marker, syncs, and writes the PMIC's restart bit, which is the same
+reset the reset button performs. The kernel's own restart does not come back on
+this hardware — the panel stays dark, the power LED goes out and even POWER does
+nothing until the reset button, with or without a USB host attached. A shutdown
+step that unmounts or remounts the card blocks, and because init waits for
+`rcK` the kernel never reaches `machine_restart` at all; once it is inside that
+path, `sysrq-trigger` cannot recover it either. BusyBox's reboot stays as the
+fallback for a board where the PMIC write does not take effect. This matters
+most after an update, when the slot has already been flipped and only a restart
+can boot the new system.
+
 Frontends should use the BaseOS commands so that shutdown intent and cleanup
 are kept. Calling BusyBox applets directly, or using frontend-specific helpers,
 can bypass them. A long power-button press forces a hardware power-off.

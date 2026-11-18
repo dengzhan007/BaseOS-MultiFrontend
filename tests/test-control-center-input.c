@@ -13,6 +13,18 @@ int main(void)
     assert(!baseos_is_boot_selector_key(BTN_TL));
     assert(!baseos_is_boot_selector_key(BTN_TR));
 
+    /* Same device tree puts L2/R2 on BTN_SELECT/BTN_START and MENU on
+     * BTN_TL2. UI actions answer to the printed button, so both codes of a
+     * pair must be accepted and neither may leak into the other pair. */
+    assert(baseos_is_select_key(BTN_TL));
+    assert(baseos_is_select_key(BTN_SELECT));
+    assert(!baseos_is_select_key(BTN_TR));
+    assert(!baseos_is_select_key(BTN_START));
+    assert(baseos_is_start_key(BTN_TR));
+    assert(baseos_is_start_key(BTN_START));
+    assert(!baseos_is_start_key(BTN_TL));
+    assert(!baseos_is_start_key(BTN_SELECT));
+
     assert(baseos_map_input_event(&state, EV_KEY, KEY_UP, 1) == KEY_UP);
     assert(baseos_map_input_event(&state, EV_KEY, BTN_DPAD_DOWN, 1) == KEY_DOWN);
     assert(baseos_map_input_event(&state, EV_KEY, KEY_LEFT, 2) == KEY_LEFT);

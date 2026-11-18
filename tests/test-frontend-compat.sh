@@ -49,13 +49,15 @@ compat_scan
 STATE=$TF1/.baseos/compat.scan-state
 [ -f "$STATE" ] || fail "compatibility scan state was not recorded"
 state_before=$(stat -c '%y' "$STATE")
-sleep 1
+sleep 3
 compat_scan
 state_after=$(stat -c '%y' "$STATE")
 [ "$state_before" = "$state_after" ] || fail "unchanged compatibility scan rewrote its state"
-sleep 1
+sleep 3
 mkdir -p "$TF1/Frontends/LateFrontend"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$TF1/Frontends/LateFrontend/launch.sh"
+sleep 3
+touch "$TF1/Frontends"
 compat_scan
 [ -f "$TF1/.baseos/compat/LateFrontend/baseos-frontend.conf" ] || fail "new frontend folder did not invalidate the compatibility scan cache"
 SIDE=$TF1/.baseos/compat/NextUI
@@ -182,5 +184,71 @@ run_manager delete-compat NextUI--default
 [ ! -e "$TF1/.baseos/compat/NextUI" ] || fail "full compatibility deletion left sidecar metadata"
 [ ! -e "$TF1/.baseos/compat-disabled/NextUI" ] || fail "full compatibility deletion left disable marker"
 [ -d "$TF1/Frontends/NextUI-copy" ] || fail "deleting one copy removed another frontend"
+
+# Card-root payload archives: NextUI-style frontends hard-code their runtime
+# root to $SDCARD/.system/<platform>, so BaseOS expands the release archive at
+# the card root on first launch and removes it again on confirmed deletion.
+mkdir -p "$TF1/Frontends/ZipUI"
+sleep 3
+touch "$TF1/Frontends"
+python3 - "$TF1/Frontends/ZipUI/MinUI.zip" "$TMP/pak-pwd" <<'PY'
+import sys
+import zipfile
+
+path, result = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(path, "w") as archive:
+    # Release archives carry every H700-family platform; the wrapper must pick
+    # this device's branch, not whichever entry the archive happens to list first.
+    archive.writestr(".system/tg5040/paks/MinUI.pak/launch.sh", "#!/bin/sh\nexit 0\n")
+    archive.writestr(
+        ".system/h700/paks/MinUI.pak/launch.sh",
+        "#!/bin/sh\nprintf '%s\\n' \"$PWD\" > \"" + result + "\"\n",
+    )
+    archive.writestr(".system/h700/bin/nextui.elf", "stub")
+    archive.writestr(".tmp_update/updater", "stub")
+    archive.writestr("Roms/README.txt", "shared tree\n")
+PY
+export BASEOS_PLATFORM=h700
+compat_scan
+ZIPCONF=$TF1/.baseos/compat/ZipUI/baseos-frontend.conf
+[ -f "$ZIPCONF" ] || fail "payload archive was not wrapped"
+grep -qx 'compat_mode=zip-card' "$ZIPCONF" || fail "payload archive did not select zip-card mode"
+grep -qx 'compat_entrypoint=MinUI.zip' "$ZIPCONF" || fail "payload archive entrypoint is not the archive"
+grep -qx 'compat_entrypoint_stat=.*' "$ZIPCONF" || fail "payload archive stat was not recorded"
+
+BASEOS_CARD_ROOT="$TF1" sh "$TF1/.baseos/compat/ZipUI/launch.sh"
+[ -f "$TMP/pak-pwd" ] || fail "payload archive launcher did not run"
+[ "$(cat "$TMP/pak-pwd")" = "$TF1/.system/h700/paks/MinUI.pak" ] ||
+  fail "payload archive launcher ran outside the expanded package"
+[ -f "$TF1/.baseos/payload/ZipUI.conf" ] || fail "payload install manifest was not recorded"
+grep -qx 'path=.system' "$TF1/.baseos/payload/ZipUI.conf" || fail "payload manifest lost the runtime root"
+if grep -qx 'path=Roms' "$TF1/.baseos/payload/ZipUI.conf"; then
+  fail "payload manifest claimed a shared data tree"
+fi
+
+# An unchanged archive must not be expanded twice; the recorded payload is
+# reused so a normal boot does not pay the unpack cost again.
+rm -f "$TF1/.system/h700/bin/nextui.elf"
+BASEOS_CARD_ROOT="$TF1" sh "$TF1/.baseos/compat/ZipUI/launch.sh"
+if [ -f "$TF1/.system/h700/bin/nextui.elf" ]; then
+  fail "second launch re-expanded an unchanged archive"
+fi
+
+# A payload shared by two frontends survives until the last one is removed,
+# and uninstall never touches the shared data trees expanded beside it.
+mkdir -p "$TF1/Frontends/ZipUI2"
+cp "$TF1/Frontends/ZipUI/MinUI.zip" "$TF1/Frontends/ZipUI2/MinUI.zip"
+sleep 3
+touch "$TF1/Frontends"
+compat_scan
+run_manager catalog
+BASEOS_CARD_ROOT="$TF1" sh "$TF1/.baseos/compat/ZipUI2/launch.sh"
+run_manager delete-compat ZipUI--default
+[ -d "$TF1/.system" ] || fail "uninstall removed a payload still claimed by another frontend"
+[ ! -e "$TF1/Frontends/ZipUI" ] || fail "uninstall left the archive package directory"
+run_manager delete-compat ZipUI2--default
+[ ! -e "$TF1/.system" ] || fail "last uninstall left the expanded payload"
+[ ! -e "$TF1/.tmp_update" ] || fail "last uninstall left the updater payload"
+[ -f "$TF1/Roms/README.txt" ] || fail "uninstall removed the shared data tree"
 
 echo "PASS: automatic legacy compatibility, independent full-copy installs, unregister and confirmed full deletion"

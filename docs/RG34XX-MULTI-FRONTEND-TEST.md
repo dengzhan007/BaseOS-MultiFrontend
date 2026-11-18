@@ -33,6 +33,7 @@ BaseOS 先扫描当前启动使用的用户数据卡中的 `Frontends/`，并读
 
 兼容匹配以目录结构和启动契约为依据，不读取或判断前端产品名。对于没有启动脚本的 H700 卡根二进制，必须遵守明确的 `System/slot` 或 `System/frontend` 命名契约，避免把动画、libretro 核心或辅助 ELF 误认为前端。当前规则为：
 - 前端包根目录中的 `launch.sh`、`start.sh`、`run.sh` 或 `frontend.sh`；
+- 前端包根目录中的 `*.zip`，且归档内含有 `.system/<platform>/paks/<package>.pak/launch.sh`（卡根载荷归档）；
 - 任意 `.system/h700/paks/<package>.pak/launch.sh`；
 - 任意一级子目录中的 `scripts/runtime.sh`；
 - `System/launch_frontend.sh`；
@@ -40,12 +41,23 @@ BaseOS 先扫描当前启动使用的用户数据卡中的 `Frontends/`，并读
 
 现有前端只是这些通用规则的兼容样例：
 - Slot：`System/slot`
-- NextUI：`.system/h700/paks/MinUI.pak/launch.sh`
+- NextUI：卡根载荷归档 `MinUI.zip`（由 BaseOS 展开，见下）
 - spruceOS：`spruce/scripts/runtime.sh`
 - 通用 H700 前端：`System/frontend` 或 `System/launch_frontend.sh`
 - 历史 adapter：`.baseos/frontends/<id>/launch.sh` 或 `baseos/frontends/<id>/launch.sh`
 
 扫描只接受明确的入口名称，不会尝试执行目录里的任意 ELF。自动生成的兼容配置、停用标记和路径映射均归 BaseOS 管理；原始前端目录作为输入保留。
+
+### 卡根载荷归档
+
+NextUI 这类 MinUI 分支不把程序放在 `Frontends/<id>/` 内，而是写死 `SDCARD_PATH=/mnt/SDCARD` 和 `SYSTEM_PATH=$SDCARD_PATH/.system/<platform>`，只能从卡根运行。它的官方发布包（`MinUI.zip` 或 `*-all.zip`）直接放进 `Frontends/<id>/` 即可，不需要手动解压，也不需要丢弃归档格式：
+
+- 首次启动时 BaseOS 把归档展开到卡根，并在 `.baseos/payload/<id>.conf` 记录归档的 `mtime:size`、入口和展开出来的私有根目录（`.system`、`.tmp_update`、`Tools`）；发布包里其他 H700 机型的分支（`tg5040`、`tg5050`、`desktop` 等）会被跳过，只解当前 `BASEOS_PLATFORM` 对应的那一支，安装在 vfat 卡上从 305 MB 降到 99 MB；
+- 归档未变化时后续启动直接复用，不重复展开；用户替换成新版归档后自动重新展开；
+- 删除前端（`delete-compat`）会移除这些私有目录；同一层的 `Roms`、`Bios`、`Saves` 等共享数据树不在记录范围内，不会被清理；
+- 两个前端声明同一个私有根时，删除其中一个会保留该目录，直到最后一个引用者被删除。
+
+这类前端的型号检测来自 `/mnt/vendor/bin/dmenu.bin`，而 BaseOS 用占位文件替代了它。因此展开启动时 BaseOS 会把 `/etc/baseos-release` 中的 `BASEOS_MODEL_STRING` 以 `RGXX_MODEL` 传给前端，避免它回落到 `rg35xxplus` 的按键布局和屏幕参数。
 
 ## 托管前端包与 profile
 

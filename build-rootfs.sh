@@ -25,7 +25,7 @@ for tool in busybox dropbearmulti curl fbsplash baseos-control-center gptgrow gp
 done
 BASEOS_VERSION="$(tr -d ' \n' < "$HERE/VERSION")"
 [ -n "$BASEOS_VERSION" ] || { echo "VERSION is empty"; exit 1; }
-BASEOS_BUILD="$(git -C "$HERE" describe --always --dirty 2>/dev/null || echo unknown)"
+BASEOS_BUILD="${BASEOS_BUILD:-$(git -C "$HERE" describe --always --dirty 2>/dev/null || echo unknown)}"
 [ -f "$TOOLS/ca-certificates.crt" ] \
   || { echo "missing $TOOLS/ca-certificates.crt (run build-tools.sh)"; exit 1; }
 # Refuse to ship binaries older than the sources in this checkout. A stale
@@ -54,7 +54,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   -e BASEOS_BLUETOOTH="$PROFILE_BLUETOOTH" \
   -e BASEOS_VERSION="$BASEOS_VERSION" \
   -e BASEOS_BUILD="$BASEOS_BUILD" \
-  alpine:3.20 sh -euc '
+  baseos-alpine-cn:3.20 sh -euc '
   # Build tools remain outside the assembled rootfs. Native AArch64 binutils
   # can strip the vendor module without changing its loadable code or ABI.
   apk add --no-cache binutils python3 >/dev/null
@@ -150,7 +150,8 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
             "$R/usr/sbin/baseos-control-center" \
             "$R/usr/sbin/frontend-session" "$R/usr/sbin/systemctl" \
             "$R/usr/sbin/expand-storage" "$R/usr/sbin/baseos-update" \
-            "$R/usr/sbin/boot-menu-held" "$R/usr/sbin/baseos-charger" \
+            "$R/usr/sbin/boot-menu-held" "$R/usr/sbin/boot-selector-held" \
+            "$R/usr/sbin/baseos-charger" \
             "$R/usr/sbin/baseos-poweroff" "$R/usr/sbin/baseos-reboot" \
             "$R/usr/sbin/poweroff" "$R/usr/sbin/reboot" \
             "$R/usr/sbin/baseos-config" "$R/usr/sbin/baseos-config-save" "$R/usr/sbin/baseos-mdns" "$R/usr/sbin/h700-speaker-amp-load" \
@@ -171,7 +172,8 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
            /usr/bin/baseos-splash /usr/bin/timedatectl \
            /usr/sbin/baseos-ntp /usr/sbin/baseos-ntp-notify \
            /usr/sbin/expand-storage /usr/sbin/baseos-update /usr/sbin/systemctl \
-           /usr/sbin/boot-menu-held /usr/sbin/baseos-charger \
+           /usr/sbin/boot-menu-held /usr/sbin/boot-selector-held \
+           /usr/sbin/baseos-charger \
            /usr/sbin/baseos-poweroff /usr/sbin/baseos-reboot \
            /usr/sbin/poweroff /usr/sbin/reboot \
            /usr/sbin/baseos-config /usr/sbin/baseos-config-save /usr/sbin/baseos-mdns /usr/sbin/h700-speaker-amp-load \

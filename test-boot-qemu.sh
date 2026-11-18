@@ -23,22 +23,22 @@ WORK="$HERE/work/$TARGET"
 [ -f "$WORK/rootfs.tar" ] || { echo "missing $WORK/rootfs.tar (run build-rootfs.sh $TARGET)"; exit 1; }
 
 docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
-  -v "$WORK":/work -e TARGET="$TARGET" alpine:3.20 sh -euc '
+  -v "$WORK":/work -e TARGET="$TARGET" baseos-alpine-cn:3.20-host sh -euc '
   apk add -q qemu-system-aarch64
 
   # Guest kernel must be aarch64 even when this container is amd64.
   . /etc/os-release
   ALPINE_REL=$(printf "%s" "$VERSION_ID" | cut -d. -f1,2)
-  MIRROR="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_REL}/main/aarch64"
+  MIRROR="https://mirrors.tuna.tsinghua.edu.cn/alpine/v${ALPINE_REL}/main/aarch64"
   cd /tmp
-  wget -q -O APKINDEX.tar.gz "$MIRROR/APKINDEX.tar.gz"
+  wget -q -U Wget/1.21.3 -O APKINDEX.tar.gz "$MIRROR/APKINDEX.tar.gz"
   tar -xzf APKINDEX.tar.gz
   PKG=$(awk -F: "
     \$1==\"P\" && \$2==\"linux-virt\" {want=1; next}
     want && \$1==\"V\" {print \"linux-virt-\" \$2 \".apk\"; exit}
   " APKINDEX)
   [ -n "$PKG" ] || { echo "could not resolve aarch64 linux-virt package" >&2; exit 1; }
-  wget -q "$MIRROR/$PKG"
+  wget -q -U Wget/1.21.3 "$MIRROR/$PKG"
   mkdir -p /tmp/aarch64-boot
   tar -xzf "$PKG" -C /tmp/aarch64-boot
   KERNEL=/tmp/aarch64-boot/boot/vmlinuz-virt

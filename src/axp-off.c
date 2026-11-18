@@ -1,6 +1,7 @@
-/* AXP2202 (AXP717 register map) soft poweroff. Keep the kernel driver bound;
- * identify its client before touching the single supported register, 0x27.
- * Without --now this is a read-only probe. See docs/05-runtime-power-network.md.
+/* AXP2202 (AXP717 register map) soft poweroff and hard restart. Keep the
+ * kernel driver bound; identify its client before touching the single
+ * supported register, 0x27. Without --now or --restart this is a read-only
+ * probe. See docs/05-runtime-power-network.md.
  */
 #include <dirent.h>
 #include <errno.h>
@@ -12,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <sys/mount.h>
 #include <unistd.h>
 
@@ -100,6 +102,18 @@ static int rd(int fd, unsigned char *out)
 	if (n >= 0)
 		errno = EIO;
 	return -1;
+}
+
+/* Appended on the restart path only: the one line that says whether the PMIC
+ * took the request, which is what has to be known when a restart ends in a
+ * dark panel. Kept on /data because /run does not survive the reset. */
+static void restart_trace(const char *what, unsigned char cur, unsigned char val)
+{
+	FILE *f = fopen("/data/axp-restart.log", "a");
+	if (!f)
+		return;
+	fprintf(f, "%ld %s 0x%02x->0x%02x\n", (long)time(NULL), what, cur, val);
+	fclose(f);
 }
 
 static int volatile_fs(const char *type)
@@ -195,17 +209,23 @@ int main(int argc, char **argv)
 	const char *sysroot;
 	char bus_path[512], whence[128], part[64];
 	unsigned bus = 0, addr = 0;
-	int fd, i, arm = 0;
+	int fd, i, arm = 0, restart = 0;
 	unsigned long funcs;
 	unsigned char cur, val;
 
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--now"))
 			arm = 1;
+		else if (!strcmp(argv[i], "--restart"))
+			restart = 1;
 		else {
-			fprintf(stderr, "usage: axp-off [--now]\n");
+			fprintf(stderr, "usage: axp-off [--now | --restart]\n");
 			return 2;
 		}
+	}
+	if (arm && restart) {
+		fprintf(stderr, "usage: axp-off [--now | --restart]\n");
+		return 2;
 	}
 
 	sysroot = getenv("BASEOS_SYS_ROOT");
@@ -248,6 +268,32 @@ int main(int argc, char **argv)
 	}
 	if (rd(fd, &cur)) {
 		fprintf(stderr, "axp-off: read REG27H: %s\n", strerror(errno));
+		return 1;
+	}
+
+	if (restart) {
+		/* The kernel's own restart drops to a halt on this hardware: the
+		 * panel goes dark and even POWER does nothing until reset. Asking
+		 * the PMIC for a restart is the same reset the button performs, and
+		 * it does not depend on any part of the kernel shutdown path, so it
+		 * cannot get stuck there. No filesystem work: sync is the caller's. */
+		val = (unsigned char)((cur & ~SOFT_PWROFF) | RESTART);
+		printf("axp-off: REG27H 0x%02x -> 0x%02x (restart)\n", cur, val);
+		fflush(stdout);
+		/* The kernel driver still owns this bus and its regmap can be mid
+		 * transaction, so a single write is not enough evidence that the
+		 * PMIC saw the bit. Retry, and record every attempt. */
+		for (int try = 0; try < 5; try++) {
+			if (write(fd, (unsigned char[]){ REG, val }, 2) == 2) {
+				restart_trace("wrote", cur, val);
+				break;
+			}
+			restart_trace("write-failed", cur, val);
+			usleep(200000);
+		}
+		sleep(5);
+		restart_trace("still-running", cur, val);
+		fprintf(stderr, "axp-off: still running after restart request\n");
 		return 1;
 	}
 

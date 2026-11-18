@@ -81,7 +81,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   -e SLOT_B_START="$SLOT_B_START" \
   -e UDISK_START="$UDISK_START" -e UDISK_SECTORS="$UDISK_SECTORS" \
   -e PRIMARY_START="$PRIMARY_START" -e PRIMARY_SECTORS="$PRIMARY_SECTORS" \
-  alpine:3.20 sh -euc '
+  baseos-alpine-cn:3.20-host sh -euc '
   apk add -q e2fsprogs e2fsprogs-extra dosfstools mtools python3 sgdisk squashfs-tools
 
   OUT="/work/$OUT_NAME"

@@ -59,6 +59,9 @@ static int confirm_mode;
 static int confirm_action;
 static int page_diagnostics;
 static int last_tested_key = -1;
+/* RG34XX/H700 vendor button layout: L2/R2 report BTN_SELECT/BTN_START and
+ * MENU reports BTN_TL2, so the on-screen names cannot follow the Linux names. */
+static int h700_keys = 1;
 static char status_text[160] = "Ready";
 static char current_default_id[64] = "auto";
 static volatile sig_atomic_t running = 1;
@@ -296,6 +299,25 @@ static void draw_text(int x, int baseline, const char *s, int px, uint32_t fg)
     }
 }
 
+/* Advance width of a string in the loaded face. Only printable ASCII has
+ * glyphs in boot.ttf, so anything else is skipped here exactly as draw_text
+ * skips it while drawing; measuring and drawing must agree or a name is cut
+ * at the wrong place. */
+static int text_width(const char *s, int px)
+{
+    int width = 0;
+    if (!ft_face || !s) return 0;
+    FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)px);
+    for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
+        if (*p < 0x20 || *p > 0x7e) continue;
+        if (!FT_Load_Char(ft_face, *p, FT_LOAD_DEFAULT))
+            width += (int)(ft_face->glyph->advance.x >> 6);
+    }
+    return width;
+}
+
+/* Draw one line clipped to max_width. A clipped line ends in "..." so a long
+ * profile or package id reads as truncated instead of as a different name. */
 static void draw_line(int x, int baseline, const char *s, int px,
                       uint32_t fg, int max_width)
 {
@@ -304,18 +326,13 @@ static void draw_line(int x, int baseline, const char *s, int px,
     if (len >= sizeof(tmp)) len = sizeof(tmp) - 1;
     memcpy(tmp, s, len);
     tmp[len] = 0;
-    if (ft_face) {
-        FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)px);
+    if (ft_face && text_width(tmp, px) > max_width) {
+        int ell = text_width("...", px);
         while (len > 0) {
-            int width = 0;
-            for (const unsigned char *p = (const unsigned char *)tmp; *p; ++p) {
-                if (*p < 0x20 || *p > 0x7e) continue;
-                if (!FT_Load_Char(ft_face, *p, FT_LOAD_DEFAULT))
-                    width += (int)(ft_face->glyph->advance.x >> 6);
-            }
-            if (width <= max_width) break;
             tmp[--len] = 0;
+            if (text_width(tmp, px) + ell <= max_width) break;
         }
+        if (len + 3 < sizeof(tmp)) memcpy(tmp + len, "...", 4);
     }
     draw_text(x, baseline, tmp, px, fg);
 }
@@ -448,7 +465,14 @@ static void draw_header(const char *title, const char *subtitle)
     fill_rect(0, 69, w, 2, colour(41, 190, 165));
     draw_text(28, 37, "BASEOS / RG34XX", 23, colour(78, 220, 193));
     draw_text(28, 59, title, 19, colour(245, 248, 252));
-    draw_line(w - 300, 43, subtitle, 15, colour(173, 190, 205), 270);
+    /* Right-aligned status line. It used to start at a fixed x with a fixed
+     * width, which clipped long package ids mid-glyph; measure first so the
+     * text sits against the margin and ends in "..." when it cannot fit. */
+    int sub_max = w - 380;
+    if (sub_max < 200) sub_max = 200;
+    int sub_w = text_width(subtitle, 15);
+    int sub_x = w - 28 - (sub_w < sub_max ? sub_w : sub_max);
+    draw_line(sub_x, 43, subtitle, 15, colour(173, 190, 205), sub_max);
 }
 
 static void draw_footer(const char *text)
@@ -578,6 +602,29 @@ static void render_diagnostics(void)
 
 static const char *input_key_name(int key)
 {
+    if (h700_keys) {
+        /* Labels describe the printed button, not the kernel code name. */
+        switch (key) {
+        case BTN_WEST: return "L1";
+        case BTN_Z: return "R1";
+        case BTN_SELECT: return "L2";
+        case BTN_START: return "R2";
+        case BTN_TL: return "Select";
+        case BTN_TR: return "Start";
+        case BTN_TL2: return "Menu";
+        case BTN_TR2: return "Extra trigger";
+        case BTN_SOUTH: return "A / South";
+        case BTN_EAST: return "B / East";
+        case BTN_C: return "X";
+        case BTN_NORTH: return "Y";
+        case BTN_MODE: return "Menu / Mode";
+        case KEY_UP: case BTN_DPAD_UP: return "D-pad Up";
+        case KEY_DOWN: case BTN_DPAD_DOWN: return "D-pad Down";
+        case KEY_LEFT: case BTN_DPAD_LEFT: return "D-pad Left";
+        case KEY_RIGHT: case BTN_DPAD_RIGHT: return "D-pad Right";
+        default: return "Other input";
+        }
+    }
     switch (key) {
     case BTN_WEST: return "L1";
     case BTN_Z: return "R1";
@@ -614,6 +661,11 @@ static void render_button_test(void)
         snprintf(code, sizeof(code), "Linux input code: %d", last_tested_key);
         draw_text(30, 258, code, 14, colour(170,190,205));
     }
+    if (h700_keys)
+        draw_line(30, 288,
+                  "H700 pad: L1=BTN_WEST R1=BTN_Z L2=BTN_SELECT R2=BTN_START "
+                  "Select=BTN_TL Start=BTN_TR Menu=BTN_TL2",
+                  12, colour(150,170,188), w - 60);
     draw_text(30, 316, "This test reads evdev events; it does not change mappings.", 13,
               colour(170,190,205));
     draw_footer("Press any key to test   A/B Back to diagnostics");
@@ -692,7 +744,7 @@ static void handle_selector_key(int key)
             else
                 set_status("Unable to write one-boot selection");
         }
-    } else if (key == BTN_START) {
+    } else if (baseos_is_start_key(key)) {
         if (selected < entry_count && strcmp(entries[selected].status,"disabled") != 0) {
             if (run_manager("set-default", entries[selected].id) == 0 &&
                 write_selection(entries[selected].id) == 0) {
@@ -702,7 +754,7 @@ static void handle_selector_key(int key)
                 set_status("Could not save default profile");
             }
         }
-    } else if (key == BTN_SELECT) {
+    } else if (baseos_is_select_key(key)) {
         if (selected < entry_count) {
             const char *action = strcmp(entries[selected].status,"disabled") == 0 ?
                                  "enable-package" : "disable-package";
@@ -736,7 +788,7 @@ static void handle_diagnostics_key(int key)
         } else if (key == BTN_EAST) {
             page_diagnostics = 0;
             set_status("Frontend selector");
-        } else if (key == BTN_START) {
+        } else if (baseos_is_start_key(key)) {
             reload_catalog();
             set_status("Diagnostics refreshed");
         }
@@ -750,9 +802,24 @@ static void handle_diagnostics_key(int key)
     }
 }
 
+static void detect_key_layout(void)
+{
+    FILE *fp = fopen("/etc/baseos-release", "r");
+    char line[160];
+    if (!fp) return;  /* every current target is H700; keep the vendor layout */
+    while (fgets(line, sizeof(line), fp)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (strncmp(line, "BASEOS_PLATFORM=", 16) != 0) continue;
+        h700_keys = strcmp(line + 16, "h700") == 0;
+        break;
+    }
+    fclose(fp);
+}
+
 static int run_ui(void)
 {
     if (framebuffer_open() != 0) return 2;
+    detect_key_layout();
     signal(SIGINT, stop_ui);
     signal(SIGTERM, stop_ui);
     open_inputs();

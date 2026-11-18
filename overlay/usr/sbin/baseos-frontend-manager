@@ -171,6 +171,46 @@ remove_frontend_path_map() {
   [ ! -f "$rfm_file" ] || rm -f -- "$rfm_file"
 }
 
+# Remove the card-root payload that a frontend archive expanded. Only the
+# frontend-private roots recorded at install time are touched, and a root is
+# kept when another installed archive still claims it.
+remove_frontend_payload() {
+  rfp_root=$1 rfp_id=$2
+  baseos_frontend_valid_id "$rfp_id" || return 1
+  [ -d "$rfp_root" ] && [ ! -L "$rfp_root" ] || return 1
+  [ ! -L "$rfp_root/.baseos" ] || { echo "refusing symlinked .baseos directory" >&2; return 1; }
+  rfp_dir=$rfp_root/.baseos/payload
+  [ ! -L "$rfp_dir" ] || { echo "refusing symlinked payload directory" >&2; return 1; }
+  [ -d "$rfp_dir" ] || return 0
+  rfp_file=$rfp_dir/$rfp_id.conf
+  [ ! -L "$rfp_file" ] || { echo "refusing symlinked payload manifest" >&2; return 1; }
+  [ -f "$rfp_file" ] || return 0
+  while IFS= read -r rfp_line; do
+    case "$rfp_line" in
+      path=*) rfp_path=${rfp_line#path=} ;;
+      *) continue ;;
+    esac
+    case "$rfp_path" in ''|.|..|*/*|*'|'*) continue ;; esac
+    if [ -L "$rfp_root/$rfp_path" ]; then
+      continue
+    fi
+    [ -d "$rfp_root/$rfp_path" ] || continue
+    rfp_shared=no
+    for rfp_other in "$rfp_dir"/*.conf; do
+      [ -f "$rfp_other" ] || continue
+      [ "$rfp_other" = "$rfp_file" ] && continue
+      if grep -qx "path=$rfp_path" "$rfp_other" 2>/dev/null; then
+        rfp_shared=yes
+        break
+      fi
+    done
+    [ "$rfp_shared" = no ] || continue
+    rm -rf -- "$rfp_root/$rfp_path" || return 1
+  done < "$rfp_file"
+  rm -f -- "$rfp_file"
+  rmdir "$rfp_dir" 2>/dev/null || :
+}
+
 legacy_path_map_card() {
   lpm_root=$1
   for lpm_card in "$TF1" "$TF2"; do
@@ -508,6 +548,7 @@ case "$cmd" in
         removed_label=COMPAT_ENABLED
       else
         remove_frontend_path_map "$ENTRY_ROOT" "$ENTRY_PACKAGE" || exit 1
+        remove_frontend_payload "$ENTRY_ROOT" "$ENTRY_PACKAGE" || exit 1
         rm -rf -- "$expected_dir"
         rm -rf -- "$compat_dir"
         rm -f -- "$disabled_marker"
