@@ -162,10 +162,32 @@ jobs:
         run: sh ./test-boot-qemu.sh rg34xx
 
       - name: Assemble and verify full RG34XX image
-        run: sh ./build-image.sh rg34xx
+        # Without the model's native boot files the composed rootfs carries no
+        # /etc/baseos/native-generation. The updater on a native device then
+        # rejects the payload as "no native boot files" before any progress is
+        # shown. The files are the verified set shipped in the repository.
+        run: sh ./build-image.sh rg34xx --native-release manifest/native/rg34xx
 
       - name: Build A/B system upgrade package
         run: sh ./build-update.sh rg34xx
+
+      - name: Assert upgrade package carries native boot files
+        # A native device refuses a payload with no native-generation field.
+        # Fail the build here rather than ship a package that silently dies at
+        # validation on the handheld, where it also leaves a stale .bosupd.
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d ' \n' < VERSION)"
+          payload="work/rg34xx/baseos-rg34xx-${version}.bosupd"
+          manifest="$(tar -xOf "$payload" manifest)"
+          grep -qx 'format=baseos-update/1' <<<"$manifest"
+          native="$(sed -n 's/^native-generation=//p' <<<"$manifest")"
+          if [ -z "$native" ] || [ "${#native}" -ne 64 ]; then
+            echo "upgrade package has no valid native-generation; a native device would reject it" >&2
+            exit 1
+          fi
+          echo "upgrade package native-generation: $native"
 
       - name: Verify upgrade package on a copied RG34XX image
         run: sh ./test-update-roundtrip.sh rg34xx

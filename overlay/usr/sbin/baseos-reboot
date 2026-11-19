@@ -15,17 +15,36 @@
 # back. The PMIC's restart bit performs the same reset the button performs and
 # depends on no part of that path.
 #
-# BusyBox's reboot stays as the fallback for a board where the PMIC write does
-# not take effect.
+# A PMIC reset is a hard cut: the kernel's shutdown path (which flushes and
+# unmounts filesystems) is exactly what cannot run here. Skipping it leaves the
+# vfat data card marked dirty on every restart, and enough of those add up to a
+# broken FAT chain that strands every frontend. So unmount the card here, while
+# we are still in normal running context where umount returns immediately — the
+# same call blocks once init enters shutdown. The updater reboots from rcS,
+# before the frontend is started, so the card has no writers then. A best-effort
+# unmount, bounded in time, is safe for the other callers too.
 MARKER="${BASEOS_POWEROFF_MARKER:-/run/poweroff-requested}"
 BUSYBOX="${BASEOS_BUSYBOX:-/usr/bin/busybox}"
 AXP_OFF="${BASEOS_AXP_OFF:-/usr/sbin/axp-off}"
+CARD="${BASEOS_CARD_MOUNT:-/mnt/sdcard}"
 
 rm -f "$MARKER"
 
 # Guarded on the real init: a test chroot runs this shim under another PID 1
-# and must never reach the host's PMIC.
+# and must never reach the host's PMIC or unmount its filesystems.
 if [ -x "$AXP_OFF" ] && [ "$(readlink /proc/1/exe 2>/dev/null)" = "/usr/bin/busybox" ]; then
+	if grep -q " $CARD vfat " /proc/mounts 2>/dev/null; then
+		# Bound the unmount: if anything still holds the card, do not let a
+		# stuck umount prevent the restart. sync below still flushes data.
+		( /usr/bin/busybox umount -r "$CARD" ) >/dev/null 2>&1 &
+		unmounter=$!
+		for _ in 1 2 3 4 5 6 7 8 9 10; do
+			kill -0 "$unmounter" 2>/dev/null || break
+			/bin/sleep 0.3
+		done
+		kill "$unmounter" 2>/dev/null
+		wait "$unmounter" 2>/dev/null
+	fi
 	sync
 	"$AXP_OFF" --restart >/dev/null 2>&1
 fi
