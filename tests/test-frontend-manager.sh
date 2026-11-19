@@ -288,4 +288,45 @@ run_manager uninstall profile-lifecycle--arcade-mode
 [ -f "$LIFECYCLE_PACKAGE/profiles/base.conf" ] || fail "uninstalling created profile removed the template profile"
 [ -f "$LIFECYCLE_PACKAGE/launch.sh" ] || fail "uninstalling a profile removed the shared frontend program"
 
+# Compatibility sidecars store profile configs separately from the original
+# frontend payload. Profile creation, rename and individual removal must use
+# the sidecar directory, while deleting the last profile also removes the
+# compatibility wrapper and isolated frontend payload.
+COMPAT_META=$TF1/.baseos/compat/compat-profile
+COMPAT_PROGRAM=$TF1/Frontends/compat-profile-payload
+mkdir -p "$COMPAT_META/profiles" "$COMPAT_PROGRAM/System"
+printf 'compat frontend payload\n' > "$COMPAT_PROGRAM/System/frontend"
+cat > "$COMPAT_META/baseos-frontend.conf" <<'EOF'
+package_api=1
+compat_api=1
+display_name=Compatibility Frontend
+compat_source=compat-profile-payload
+compat_entrypoint=System/frontend
+compat_mode=binary-card
+priority=90
+volume_owner=system
+power_owner=system
+EOF
+cat > "$COMPAT_META/profiles/base.conf" <<'EOF'
+profile_api=1
+display_name=Base
+priority=100
+EOF
+run_manager catalog
+grep -F -q 'compat-profile--base|Compatibility Frontend / Base|' "$CATALOG" || fail "compatibility profile was not catalogued"
+run_manager create-profile compat-profile--base arcade "Arcade Mode"
+[ -f "$COMPAT_META/profiles/arcade.conf" ] || fail "compatibility profile was not created in its sidecar directory"
+grep -F -q 'display_name=Arcade Mode' "$COMPAT_META/profiles/arcade.conf" || fail "compatibility profile display name was not saved"
+run_manager rename-profile compat-profile--arcade "Arcade Cabinet"
+grep -F -q 'display_name=Arcade Cabinet' "$COMPAT_META/profiles/arcade.conf" || fail "compatibility profile rename failed"
+run_manager uninstall compat-profile--arcade
+[ ! -e "$COMPAT_META/profiles/arcade.conf" ] || fail "compatibility profile could not be individually removed"
+[ -f "$COMPAT_META/profiles/base.conf" ] || fail "removing compatibility profile deleted its sibling profile"
+[ -f "$COMPAT_PROGRAM/System/frontend" ] || fail "removing compatibility profile deleted its shared frontend payload"
+run_manager set-default compat-profile--base
+run_manager uninstall compat-profile--base
+[ ! -e "$COMPAT_META" ] || fail "removing the last compatibility profile left its BaseOS wrapper"
+[ ! -e "$COMPAT_PROGRAM" ] || fail "removing the last compatibility profile left its isolated frontend payload"
+[ "$(sed -n 's/^frontend_id=//p' "$CONFIG" | tail -n 1)" != compat-profile--base ] || fail "deleted compatibility default remained pinned"
+
 echo "PASS: frontend manager catalog, profile/full uninstall, legacy adapter selector lifecycle, data retention, package rename/default migration and symlink guard"
