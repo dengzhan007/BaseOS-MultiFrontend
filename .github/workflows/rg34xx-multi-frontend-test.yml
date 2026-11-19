@@ -93,7 +93,18 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: work/tools
-          key: h700-tools-v1-${{ runner.os }}-${{ hashFiles('build-tools.sh', 'tools/tools-stamp.sh', 'tools/docker-platform.sh', 'src/*.c', 'src/*.h', 'src/adbd-patches/*', 'tools/*.c', 'tools/*.h') }}
+          # Deliberately independent of src/*.c: editing the UI or any other
+          # in-repo C source must not throw away the pinned third-party
+          # downloads (dropbear, curl, e2fsprogs, OpenSSH, adbd, avahi). Those
+          # need the network and take most of an hour; the step below drops
+          # only the binaries compiled from src/ and rebuilds those.
+          key: h700-tools-v2-${{ runner.os }}-${{ hashFiles('build-tools.sh', 'tools/tools-stamp.sh', 'tools/docker-platform.sh', 'src/adbd-patches/*', 'tools/*.c', 'tools/*.h') }}
+          # A prefix match still brings the third-party downloads back, which is
+          # all the incremental path needs. Without it the first run after this
+          # key change would rebuild everything over the network again.
+          restore-keys: |
+            h700-tools-v2-
+            h700-tools-v1-
 
       - name: Build or reuse static H700 tools and framebuffer selector
         env:
@@ -102,10 +113,21 @@ jobs:
           set -eu
           expected_stamp="$(sh tools/tools-stamp.sh)"
           valid=1
-          if [ "$TOOLS_CACHE_HIT" != "true" ] || [ ! -s work/tools/.stamp ]; then
+          stale=0
+          if [ ! -x work/tools/busybox ] || [ ! -s work/tools/.stamp ]; then
+            # Nothing usable was restored, not even through restore-keys.
             valid=0
           elif [ "$(cat work/tools/.stamp)" != "$expected_stamp" ]; then
-            valid=0
+            # The cache matches this workflow and these pinned third-party
+            # versions, but an in-repo source changed. Keep the downloads and
+            # drop just the tools compiled from src/, so build-tools.sh rebuilds
+            # those and reuses everything else.
+            echo "In-repo tools are stale; rebuilding only the binaries from src/."
+            rm -f work/tools/fbsplash work/tools/baseos-control-center \
+                  work/tools/gptgrow work/tools/gptslot work/tools/axp-off \
+                  work/tools/charger-wait work/tools/boot-clock \
+                  work/tools/native-health work/tools/baseos-regs
+            stale=1
           else
             for tool in busybox dropbearmulti curl fbsplash baseos-control-center \
               gptgrow gptslot charger-wait boot-clock native-health baseos-regs \
@@ -130,8 +152,11 @@ jobs:
 
           if [ "$valid" -eq 1 ]; then
             echo "Reusing validated H700 static tools cache."
+          elif [ "$stale" -eq 1 ]; then
+            echo "Rebuilding the in-repo tools; the third-party ones stay cached."
+            sh ./build-tools.sh
           else
-            echo "No valid H700 static tools cache; building from source."
+            echo "No usable H700 static tools cache; building everything from source."
             rm -rf work/tools
             sh ./build-tools.sh
           fi
@@ -141,7 +166,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: work/tools
-          key: h700-tools-v1-${{ runner.os }}-${{ hashFiles('build-tools.sh', 'tools/tools-stamp.sh', 'tools/docker-platform.sh', 'src/*.c', 'src/*.h', 'src/adbd-patches/*', 'tools/*.c', 'tools/*.h') }}
+          key: h700-tools-v2-${{ runner.os }}-${{ hashFiles('build-tools.sh', 'tools/tools-stamp.sh', 'tools/docker-platform.sh', 'src/adbd-patches/*', 'tools/*.c', 'tools/*.h') }}
 
       - name: Build or reuse RG34XX audio modules
         run: sh ./build-audio-module.sh rg34xx

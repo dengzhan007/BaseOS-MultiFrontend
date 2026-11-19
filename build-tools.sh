@@ -38,7 +38,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out ba
 
   apk add -q build-base zlib-dev zlib-static curl
   cd /tmp
-  curl -fsSLO https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.85.tar.bz2
+  curl -fsSLO --retry 3 --retry-delay 2 --retry-connrefused https://matt.ucc.asn.au/dropbear/releases/dropbear-2024.85.tar.bz2
   tar xf dropbear-2024.85.tar.bz2
   cd dropbear-2024.85
   ./configure --enable-static --disable-lastlog --disable-wtmp >/dev/null
@@ -60,7 +60,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out ba
   CURL_VERSION=8.21.0
   CURL_SHA256=aa1b66a70eace83dc624508745646c08ae561de512ab403adffb93ac87fc72e6
   cd /tmp
-  wget -q "https://curl.se/download/curl-$CURL_VERSION.tar.xz"
+  wget -q -t 3 -T 60 "https://curl.se/download/curl-$CURL_VERSION.tar.xz"
   echo "$CURL_SHA256  curl-$CURL_VERSION.tar.xz" | sha256sum -c -
   tar xf "curl-$CURL_VERSION.tar.xz"
   cd "curl-$CURL_VERSION"
@@ -154,7 +154,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out ba
   E2FS_VERSION=1.47.2
   E2FS_SHA256=08242e64ca0e8194d9c1caad49762b19209a06318199b63ce74ae4ef2d74e63c
   cd /tmp
-  wget -q "https://mirrors.edge.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FS_VERSION/e2fsprogs-$E2FS_VERSION.tar.xz"
+  wget -q -t 3 -T 60 "https://mirrors.edge.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FS_VERSION/e2fsprogs-$E2FS_VERSION.tar.xz"
   echo "$E2FS_SHA256  e2fsprogs-$E2FS_VERSION.tar.xz" | sha256sum -c -
   tar xf "e2fsprogs-$E2FS_VERSION.tar.xz"
   cd "e2fsprogs-$E2FS_VERSION"
@@ -181,7 +181,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" -v "$TOOLS":/out ba
   OPENSSH_VERSION=10.4p1
   OPENSSH_SHA256=ef6026dd2aea8d56059638d5d3262902c892ceba9f88395835e0d06d3fb63238
   cd /tmp
-  wget -q "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-$OPENSSH_VERSION.tar.gz"
+  wget -q -t 3 -T 60 "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-$OPENSSH_VERSION.tar.gz"
   echo "$OPENSSH_SHA256  openssh-$OPENSSH_VERSION.tar.gz" | sha256sum -c -
   tar xf "openssh-$OPENSSH_VERSION.tar.gz"
   cd "openssh-$OPENSSH_VERSION"
@@ -211,8 +211,8 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   ORIG_SHA256=9bfba987e1351b12aa983787b9ae4424ab752e9e646d8e93771538dc1e5d932f
   DEB_SHA256=73c3078de3e44d8a3cadf7a360863c63155d9d558c2f0933cf38ad901a3f5998
   cd /tmp
-  wget -q "$SITE/android-tools_$AT_VER.orig.tar.xz"
-  wget -q "$SITE/android-tools_$AT_VER-3ubuntu41.debian.tar.gz"
+  wget -q -t 3 -T 60 "$SITE/android-tools_$AT_VER.orig.tar.xz"
+  wget -q -t 3 -T 60 "$SITE/android-tools_$AT_VER-3ubuntu41.debian.tar.gz"
   echo "$ORIG_SHA256  android-tools_$AT_VER.orig.tar.xz" | sha256sum -c -
   echo "$DEB_SHA256  android-tools_$AT_VER-3ubuntu41.debian.tar.gz" | sha256sum -c -
   tar xf "android-tools_$AT_VER.orig.tar.xz"
@@ -247,7 +247,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   LIBDAEMON_VERSION=0.14
   LIBDAEMON_SHA256=fd23eb5f6f986dcc7e708307355ba3289abe03cc381fc47a80bca4a50aa6b834
   cd /tmp
-  wget -q "https://0pointer.de/lennart/projects/libdaemon/libdaemon-$LIBDAEMON_VERSION.tar.gz"
+  wget -q -t 3 -T 60 "https://0pointer.de/lennart/projects/libdaemon/libdaemon-$LIBDAEMON_VERSION.tar.gz"
   echo "$LIBDAEMON_SHA256  libdaemon-$LIBDAEMON_VERSION.tar.gz" | sha256sum -c -
   tar xf "libdaemon-$LIBDAEMON_VERSION.tar.gz"
   cd "libdaemon-$LIBDAEMON_VERSION"
@@ -260,7 +260,7 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   AVAHI_VERSION=0.8
   AVAHI_SHA256=060309d7a333d38d951bc27598c677af1796934dbd98e1024e7ad8de798fedda
   cd /tmp
-  wget -q "https://github.com/lathiat/avahi/releases/download/v$AVAHI_VERSION/avahi-$AVAHI_VERSION.tar.gz"
+  wget -q -t 3 -T 60 "https://github.com/lathiat/avahi/releases/download/v$AVAHI_VERSION/avahi-$AVAHI_VERSION.tar.gz"
   echo "$AVAHI_SHA256  avahi-$AVAHI_VERSION.tar.gz" | sha256sum -c -
   tar xf "avahi-$AVAHI_VERSION.tar.gz"
   cd "avahi-$AVAHI_VERSION"
