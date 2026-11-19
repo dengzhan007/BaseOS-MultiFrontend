@@ -40,6 +40,7 @@ STATE="$STATE_DIR/state"
 # oscillate forever — and neither is one that already succeeded.
 HISTORY="$STATE_DIR/history"
 LEGACY_COMMITTED_SHA="$STATE_DIR/committed-sha"
+FAILURE="$STATE_DIR/last-failure"
 . /usr/share/baseos/boot-log.sh
 # A trial can roll back and reboot before rcS mounts the frontend card. Keep
 # those diagnostics on /data until a later normal boot can move them to it.
@@ -71,6 +72,47 @@ VERIFY_TO=95
 COMMIT_STAGE=98
 
 update_log() { log "update: $*"; }
+
+record_update_failure() {
+	failed_payload="$1"
+	failed_reason="$2"
+	mkdir -p "$STATE_DIR" 2>/dev/null || :
+	{
+		printf 'payload=%s\\n' "${failed_payload##*/}"
+		printf 'reason=%s\\n' "$failed_reason"
+	} > "$FAILURE" 2>/dev/null || :
+	update_log "${failed_payload##*/} failed: $failed_reason"
+}
+
+# Keep a failed package for inspection/manual recovery, but remove it from the
+# *.bosupd scan so every boot does not repeat the same rejected or partial
+# update. The suffix is on the same filesystem, so this is an atomic rename.
+quarantine_payload() {
+	failed_payload="$1"
+	[ -f "$failed_payload" ] || return 0
+	payload_dir="${failed_payload%/*}"
+	was_ro="$(awk -v path="$payload_dir" '$2 == path && $4 ~ /(^|,)ro(,|$)/ { print 1; exit }' /proc/mounts)"
+	if [ "$was_ro" = 1 ] && ! mount -o remount,rw "$payload_dir" 2>>"$LOG"; then
+		update_log "could not make $payload_dir writable; keeping $failed_payload"
+		return 0
+	fi
+	if mv -- "$failed_payload" "$failed_payload.failed" 2>>"$LOG"; then
+		update_log "quarantined failed update as $failed_payload.failed"
+		sync
+	else
+		update_log "could not quarantine failed update $failed_payload"
+	fi
+	if [ "$was_ro" = 1 ]; then
+		mount -o remount,ro "$payload_dir" 2>>"$LOG" \\
+			|| update_log "could not restore read-only mount $payload_dir"
+	fi
+	return 0
+}
+
+fail_selected_payload() {
+	record_update_failure "$payload" "$1"
+	quarantine_payload "$payload"
+}
 
 splash() {
 	[ -x /usr/bin/baseos-splash ] && /usr/bin/baseos-splash --important "$@" 2>/dev/null
@@ -286,7 +328,8 @@ select_payload() {
 				evaluate "$candidate" "$strict"; verdict=$?
 				if [ "$verdict" -eq 0 ]; then CHOSEN="$candidate"; break; fi
 				if [ "$verdict" -eq 2 ]; then
-					update_log "$candidate rejected: $EV_REASON"
+					record_update_failure "$candidate" "$EV_REASON"
+					quarantine_payload "$candidate"
 					REJECTED=1
 				fi
 			done
@@ -356,6 +399,7 @@ apply() {
 	want_sha="$EV_SHA"
 
 	mkdir -p "$STATE_DIR"
+	rm -f "$FAILURE"
 	update_log "installing $version ($build) from ${payload##*/}"
 	splash "$WRITE_FROM" "UPDATING SYSTEM"
 
@@ -380,7 +424,7 @@ apply() {
 				"UPDATING SYSTEM"
 		done
 	}; then
-		update_log "write to the inactive slot failed — GPT untouched"
+		fail_selected_payload "write to the inactive slot failed; active slot and GPT were not changed"
 		splash -1 "UPDATE FAILED"
 		cleanup
 		return 1
@@ -406,7 +450,7 @@ apply() {
 		done
 	} | sha256sum | cut -d' ' -f1)"
 	if [ "$got_sha" != "$want_sha" ]; then
-		update_log "verify failed (got $got_sha want $want_sha) — GPT untouched"
+		fail_selected_payload "read-back SHA-256 mismatch (got $got_sha, expected $want_sha); active slot and GPT were not changed"
 		splash -1 "UPDATE FAILED"
 		cleanup
 		return 1
@@ -415,7 +459,7 @@ apply() {
 	# The commit. Everything above is reversible by doing nothing.
 	if ! flip_output="$(/usr/sbin/gptslot "$DISK" flip 2>&1)"; then
 		[ -z "$flip_output" ] || printf "%s\n" "$flip_output" >> "$LOG" 2>/dev/null
-		update_log "written and checked, but the slot flip failed — still running the old slot"
+		fail_selected_payload "image was written and verified, but GPT slot switch failed; still running the old slot"
 		splash -1 "UPDATE FAILED"
 		cleanup
 		return 1
@@ -527,6 +571,10 @@ status() {
 			"$(field "$STATE" attempts)" "$MAX_TRIAL_BOOTS"
 	else
 		printf "trial:   none (committed)\n"
+	fi
+	if [ -s "$FAILURE" ]; then
+		printf "last failure:\\n"
+		sed 's/^/  /' "$FAILURE"
 	fi
 
 	# Why every payload on the card is or is not going to be applied. The apply
