@@ -489,6 +489,49 @@ static int run_manager(const char *action, const char *id)
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
+static int run_manager_args(const char *action, const char *arg1,
+                              const char *arg2, const char *arg3)
+{
+    pid_t pid = fork();
+    int status = 0;
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        if (arg3)
+            execl(MANAGER, "baseos-frontend-manager", action, arg1, arg2, arg3,
+                  (char *)NULL);
+        else if (arg2)
+            execl(MANAGER, "baseos-frontend-manager", action, arg1, arg2,
+                  (char *)NULL);
+        else if (arg1)
+            execl(MANAGER, "baseos-frontend-manager", action, arg1, (char *)NULL);
+        else
+            execl(MANAGER, "baseos-frontend-manager", action, (char *)NULL);
+        _exit(127);
+    }
+    while (waitpid(pid, &status, 0) < 0) if (errno != EINTR) return -1;
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+static int read_config_value(const char *path, const char *key,
+                             char *value, size_t capacity)
+{
+    FILE *fp = fopen(path, "r");
+    if (!fp) return -1;
+    char line[256];
+    size_t key_len = strlen(key);
+    int found = 0;
+    value[0] = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, key, key_len) != 0 || line[key_len] != '=') continue;
+        char *p = line + key_len + 1;
+        p[strcspn(p, "\r\n")] = 0;
+        snprintf(value, capacity, "%s", p);
+        found = 1;
+    }
+    fclose(fp);
+    return found ? 0 : -1;
+}
+
 static int write_selection(const char *id)
 {
     int fd = open(SELECTION, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
@@ -686,7 +729,6 @@ static void render_diagnostics(void)
 static const char *input_key_name(int key)
 {
     if (h700_keys) {
-        /* Labels describe the printed button, not the kernel code name. */
         switch (key) {
         case BTN_WEST: return "L1";
         case BTN_Z: return "R1";
@@ -696,17 +738,11 @@ static const char *input_key_name(int key)
         case BTN_TR: return "Start";
         case BTN_TL2: return "Menu";
         case BTN_TR2: return "Extra trigger";
-        case BTN_SOUTH: return "A / South";
-        case BTN_EAST: return "B / East";
+        case BTN_SOUTH: return "A";
+        case BTN_EAST: return "B";
         case BTN_C: return "X";
         case BTN_NORTH: return "Y";
-        case BTN_MODE: return "Menu / Mode";
-    case BTN_THUMBL: return "L3 / Left stick click";
-    case BTN_THUMBR: return "R3 / Right stick click";
-    case TEST_AXIS_LX: return "Left stick X axis";
-    case TEST_AXIS_LY: return "Left stick Y axis";
-    case TEST_AXIS_RX: return "Right stick X axis";
-    case TEST_AXIS_RY: return "Right stick Y axis";
+        case BTN_MODE: return "Mode";
         case BTN_THUMBL: return "L3 / Left stick click";
         case BTN_THUMBR: return "R3 / Right stick click";
         case TEST_AXIS_LX: return "Left stick X axis";
@@ -721,19 +757,25 @@ static const char *input_key_name(int key)
         }
     }
     switch (key) {
-    case BTN_WEST: return "L1";
+    case BTN_WEST: return "X / West";
     case BTN_Z: return "R1";
-    case BTN_TL: return "Select";
-    case BTN_TR: return "Start";
-    case BTN_TL2: return "L2";
+    case BTN_TL: return "L1 / Select";
+    case BTN_TR: return "R1 / Start";
+    case BTN_TL2: return "L2 / Menu";
     case BTN_TR2: return "R2";
-    case BTN_SOUTH: return "A / South";
-    case BTN_EAST: return "B / East";
-    case BTN_C: return "X";
+    case BTN_SOUTH: return "A";
+    case BTN_EAST: return "B";
+    case BTN_C: return "C";
     case BTN_NORTH: return "Y";
     case BTN_START: return "Start";
     case BTN_SELECT: return "Select";
-    case BTN_MODE: return "Menu / Mode";
+    case BTN_MODE: return "Mode";
+    case BTN_THUMBL: return "L3 / Left stick click";
+    case BTN_THUMBR: return "R3 / Right stick click";
+    case TEST_AXIS_LX: return "Left stick X axis";
+    case TEST_AXIS_LY: return "Left stick Y axis";
+    case TEST_AXIS_RX: return "Right stick X axis";
+    case TEST_AXIS_RY: return "Right stick Y axis";
     case KEY_UP: case BTN_DPAD_UP: return "D-pad Up";
     case KEY_DOWN: case BTN_DPAD_DOWN: return "D-pad Down";
     case KEY_LEFT: case BTN_DPAD_LEFT: return "D-pad Left";
