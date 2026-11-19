@@ -474,8 +474,7 @@ create_profile() {
     echo "profile already exists: $new_profile_id" >&2
     return 1
   }
-  new_profile_tmp=$new_profile_file.tmp.$
-  rm -f "$new_profile_tmp"
+  new_profile_tmp=$(mktemp "$new_profile_file.tmp.XXXXXX") || return 1
   awk -v name="$new_profile_name" '
     BEGIN { written=0 }
     /^display_name=/ {
@@ -506,8 +505,7 @@ rename_profile() {
     return 1
   }
   profile_directory_for_entry || return 1
-  renamed_profile_tmp=$ENTRY_CONFIG.tmp.$
-  rm -f "$renamed_profile_tmp"
+  renamed_profile_tmp=$(mktemp "$ENTRY_CONFIG.tmp.XXXXXX") || return 1
   awk -v name="$renamed_profile_name" '
     BEGIN { written=0 }
     /^display_name=/ {
