@@ -29,16 +29,32 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_HOST" \
   # Guest kernel must be aarch64 even when this container is amd64.
   . /etc/os-release
   ALPINE_REL=$(printf "%s" "$VERSION_ID" | cut -d. -f1,2)
-  MIRROR="https://mirrors.tuna.tsinghua.edu.cn/alpine/v${ALPINE_REL}/main/aarch64"
+  # The runner is usually far from any single mirror, so try several in turn
+  # instead of failing the whole build on one timeout. The official CDN is
+  # listed first because a hosted runner reaches it directly.
+  MIRRORS="https://dl-cdn.alpinelinux.org/alpine/v$ALPINE_REL/main/aarch64 https://mirrors.tuna.tsinghua.edu.cn/alpine/v$ALPINE_REL/main/aarch64 https://mirrors.aliyun.com/alpine/v$ALPINE_REL/main/aarch64"
   cd /tmp
-  wget -q -U Wget/1.21.3 -O APKINDEX.tar.gz "$MIRROR/APKINDEX.tar.gz"
+  MIRROR=
+  for base in $MIRRORS; do
+    if wget -q -T 30 -t 2 -U Wget/1.21.3 -O APKINDEX.tar.gz "$base/APKINDEX.tar.gz"; then
+      MIRROR=$base; break
+    fi
+    rm -f APKINDEX.tar.gz
+  done
+  [ -n "$MIRROR" ] || { echo "could not fetch APKINDEX from any mirror" >&2; exit 1; }
+  echo "APKINDEX from $MIRROR"
   tar -xzf APKINDEX.tar.gz
   PKG=$(awk -F: "
     \$1==\"P\" && \$2==\"linux-virt\" {want=1; next}
     want && \$1==\"V\" {print \"linux-virt-\" \$2 \".apk\"; exit}
   " APKINDEX)
   [ -n "$PKG" ] || { echo "could not resolve aarch64 linux-virt package" >&2; exit 1; }
-  wget -q -U Wget/1.21.3 "$MIRROR/$PKG"
+  got=
+  for base in $MIRRORS; do
+    if wget -q -T 60 -t 2 -U Wget/1.21.3 -O "$PKG" "$base/$PKG"; then got=1; break; fi
+    rm -f "$PKG"
+  done
+  [ -n "$got" ] || { echo "could not fetch $PKG from any mirror" >&2; exit 1; }
   mkdir -p /tmp/aarch64-boot
   tar -xzf "$PKG" -C /tmp/aarch64-boot
   KERNEL=/tmp/aarch64-boot/boot/vmlinuz-virt
