@@ -127,6 +127,8 @@ jobs:
                   work/tools/gptgrow work/tools/gptslot work/tools/axp-off \
                   work/tools/charger-wait work/tools/boot-clock \
                   work/tools/native-health work/tools/baseos-regs
+            # The dropped binaries must not be reported as a validated cache.
+            valid=0
             stale=1
           else
             for tool in busybox dropbearmulti curl fbsplash baseos-control-center \
