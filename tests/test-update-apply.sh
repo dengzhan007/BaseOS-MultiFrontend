@@ -210,8 +210,11 @@ EOF
   test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed \
     || { echo "FAIL: rejected package not quarantined" >&2; exit 1; }
   echo "MARK: after test2"
-  grep -q 'reason=built for rg35xxh' /data/update/last-failure \
-    || { echo "FAIL: rejection reason missing" >&2; cat /data/update/last-failure >&2; exit 1; }
+  reason_line="$(grep '^reason=' /data/update/last-failure 2>/dev/null || true)"
+  case "$reason_line" in
+    *"built for rg35xxh"*) ;;
+    *) echo "FAIL: rejection reason missing: [$reason_line]" >&2; exit 1 ;;
+  esac
   echo "MARK: after test3"
   echo "ok: rejected package quarantined with its reason"
 
