@@ -92,19 +92,21 @@ quarantine_payload() {
 	[ -f "$failed_payload" ] || return 0
 	payload_dir="${failed_payload%/*}"
 	was_ro="$(awk -v path="$payload_dir" '$2 == path && $4 ~ /(^|,)ro(,|$)/ { print 1; exit }' /proc/mounts)"
-	if [ "$was_ro" = 1 ] && ! mount -o remount,rw "$payload_dir" 2>>"$LOG"; then
-		update_log "could not make $payload_dir writable; keeping $failed_payload"
-		return 0
-	fi
+
+	# Try the rename first. A read-only /proc/mounts line is only a hint: the
+	# directory may already be writable (or be a plain directory in a test
+	# container), and a failed remount must not stop us from quarantining.
 	if mv -- "$failed_payload" "$failed_payload.failed" 2>>"$LOG"; then
 		update_log "quarantined failed update as $failed_payload.failed"
 		sync
-	else
-		update_log "could not quarantine failed update $failed_payload"
-	fi
-	if [ "$was_ro" = 1 ]; then
+	elif [ "$was_ro" = 1 ] && mount -o remount,rw "$payload_dir" 2>>"$LOG" \
+		&& mv -- "$failed_payload" "$failed_payload.failed" 2>>"$LOG"; then
+		update_log "quarantined failed update as $failed_payload.failed after remount"
+		sync
 		mount -o remount,ro "$payload_dir" 2>>"$LOG" \
 			|| update_log "could not restore read-only mount $payload_dir"
+	else
+		update_log "could not quarantine failed update $failed_payload"
 	fi
 	return 0
 }
