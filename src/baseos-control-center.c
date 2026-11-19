@@ -577,15 +577,15 @@ static void render_diagnostics(void)
     int w = (int)fb_var.xres;
     char line[160];
     draw_header("System diagnostics", "BaseOS / RG34XX");
-    draw_text(28, 112, "Device", 14, colour(123,192,180));
-    draw_text(190, 112, "Anbernic RG34XX / Allwinner H700", 15, colour(236,242,247));
+    draw_text(28, 108, "Device", 14, colour(123,192,180));
+    draw_text(190, 108, "Anbernic RG34XX / Allwinner H700", 15, colour(236,242,247));
     if (uname(&u) == 0) {
-        draw_text(28, 151, "Kernel", 14, colour(123,192,180));
-        draw_line(190, 151, u.release, 14, colour(236,242,247), w - 215);
+        draw_text(28, 143, "Kernel", 14, colour(123,192,180));
+        draw_line(190, 143, u.release, 14, colour(236,242,247), w - 215);
     }
-    draw_text(28, 190, "Frontend catalog", 14, colour(123,192,180));
+    draw_text(28, 178, "Frontend catalog", 14, colour(123,192,180));
     snprintf(line, sizeof(line), "%d compatible profile(s)", entry_count);
-    draw_text(190, 190, line, 14, colour(236,242,247));
+    draw_text(190, 178, line, 14, colour(236,242,247));
 
     int mounted = 0;
     FILE *fp = fopen("/proc/mounts", "r");
@@ -595,8 +595,8 @@ static void render_diagnostics(void)
             if (strstr(row, " /mnt/sdcard ")) { mounted = 1; break; }
         fclose(fp);
     }
-    draw_text(28, 229, "Storage", 14, colour(123,192,180));
-    draw_text(190, 229, mounted ? "/mnt/sdcard mounted" : "No user-data card mounted",
+    draw_text(28, 213, "Storage", 14, colour(123,192,180));
+    draw_text(190, 213, mounted ? "/mnt/sdcard mounted" : "No user-data card mounted",
               14, colour(236,242,247));
 
     fp = fopen("/sys/class/power_supply/axp2202-battery/capacity", "r");
@@ -605,16 +605,23 @@ static void render_diagnostics(void)
         if (fgets(battery, sizeof(battery), fp)) battery[strcspn(battery, "\r\n")] = 0;
         fclose(fp);
     }
-    draw_text(28, 268, "Battery", 14, colour(123,192,180));
+    draw_text(28, 248, "Battery", 14, colour(123,192,180));
     snprintf(line, sizeof(line), "%s%%", battery);
-    draw_text(190, 268, line, 14, colour(236,242,247));
-
-    draw_text(28, 307, "USB Mass Storage", 14, colour(123,192,180));
-    draw_text(190, 307, "Hold MENU while powering on", 14, colour(236,242,247));
-    draw_text(28, 346, "Boot log", 14, colour(123,192,180));
-    draw_line(190, 346, "/mnt/sdcard/baseos-boot.log", 14,
+    draw_text(190, 248, line, 14, colour(236,242,247));
+    draw_text(28, 283, "USB Mass Storage", 14, colour(123,192,180));
+    draw_text(190, 283, "Hold MENU while powering on", 14, colour(236,242,247));
+    draw_text(28, 318, "Boot log", 14, colour(123,192,180));
+    draw_line(190, 318, "/mnt/sdcard/baseos-boot.log", 14,
               colour(236,242,247), w - 215);
-    draw_footer("A Button test   B Frontend selector   START Refresh");
+
+    /* Make the input test a primary, high-contrast action rather than a
+     * footer-only hint. */
+    fill_rect(22, 342, w - 44, 65, colour(24, 77, 77));
+    fill_rect(22, 342, 6, 65, colour(54, 220, 185));
+    draw_text(42, 369, "BUTTON TEST", 19, colour(255,255,255));
+    draw_text(42, 393, "Press A to test every button, trigger and analog stick",
+              13, colour(195,235,226));
+    draw_footer("A Open button test   B Frontend selector   START Refresh");
 }
 
 static const char *input_key_name(int key)
@@ -635,6 +642,18 @@ static const char *input_key_name(int key)
         case BTN_C: return "X";
         case BTN_NORTH: return "Y";
         case BTN_MODE: return "Menu / Mode";
+    case BTN_THUMBL: return "L3 / Left stick click";
+    case BTN_THUMBR: return "R3 / Right stick click";
+    case TEST_AXIS_LX: return "Left stick X axis";
+    case TEST_AXIS_LY: return "Left stick Y axis";
+    case TEST_AXIS_RX: return "Right stick X axis";
+    case TEST_AXIS_RY: return "Right stick Y axis";
+        case BTN_THUMBL: return "L3 / Left stick click";
+        case BTN_THUMBR: return "R3 / Right stick click";
+        case TEST_AXIS_LX: return "Left stick X axis";
+        case TEST_AXIS_LY: return "Left stick Y axis";
+        case TEST_AXIS_RX: return "Right stick X axis";
+        case TEST_AXIS_RY: return "Right stick Y axis";
         case KEY_UP: case BTN_DPAD_UP: return "D-pad Up";
         case KEY_DOWN: case BTN_DPAD_DOWN: return "D-pad Down";
         case KEY_LEFT: case BTN_DPAD_LEFT: return "D-pad Left";
@@ -749,10 +768,13 @@ static void render_button_test(void)
     draw_footer("Hold MENU + START together to return to diagnostics");
 }
 
+static void render_text_entry(void);
+
 static void render(void)
 {
     if (page_diagnostics == 1) render_diagnostics();
     else if (page_diagnostics == 2) render_button_test();
+    else if (page_diagnostics == 3) render_text_entry();
     else if (confirm_mode) render_confirm();
     else render_selector();
     /* Compose off-screen, then update the visible framebuffer in one copy. */
@@ -865,13 +887,15 @@ static void handle_selector_key(int key)
     }
 }
 
+static void handle_text_entry_key(int key);
+
 static void handle_diagnostics_key(int key)
 {
     if (page_diagnostics == 1) {
         if (key == BTN_SOUTH) {
             page_diagnostics = 2;
             last_tested_key = -1;
-            set_status("Press buttons to test");
+            set_status("Press buttons and move sticks; MENU+START exits");
         } else if (key == BTN_EAST) {
             page_diagnostics = 0;
             set_status("Frontend selector");
@@ -880,12 +904,18 @@ static void handle_diagnostics_key(int key)
             set_status("Diagnostics refreshed");
         }
     } else if (page_diagnostics == 2) {
-        if (key == BTN_EAST || key == BTN_SOUTH) {
+        /* A and B are testable inputs. Exit only through the deliberate
+         * MENU + START chord so neither face button is consumed as Back. */
+        if (key_is_down(BTN_TL2) &&
+            (key_is_down(BTN_TR) || key_is_down(BTN_START))) {
             page_diagnostics = 1;
+            last_tested_key = -1;
             set_status("Diagnostics");
         } else {
             last_tested_key = key;
         }
+    } else if (page_diagnostics == 3) {
+        handle_text_entry_key(key);
     }
 }
 
