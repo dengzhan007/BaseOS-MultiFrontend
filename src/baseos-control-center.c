@@ -1265,8 +1265,8 @@ static void handle_diagnostics_key(int key)
     } else if (page_diagnostics == 2) {
         /* A and B are testable inputs. Exit only through the deliberate
          * MENU + START chord so neither face button is consumed as Back. */
-        if (key_is_down(BTN_TL2) &&
-            (key_is_down(BTN_TR) || key_is_down(BTN_START))) {
+        if (baseos_button_test_exit_chord(key_is_down(BTN_TL2),
+                                          key_is_down(BTN_TR) || key_is_down(BTN_START))) {
             page_diagnostics = 1;
             last_tested_key = -1;
             set_status("Diagnostics");
