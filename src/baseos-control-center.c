@@ -718,7 +718,16 @@ static const UiTranslation ui_translations[] = {
     {"Language changed to Chinese", "显示语言已切换为中文"},
     {"Language changed to English", "显示语言已切换为英文"},
     {"L1 English", "L1 English"},
-    {"L1 中文", "L1 中文"}
+    {"L1 中文", "L1 中文"},
+    {"USB STORAGE MODE", "USB 存储模式"},
+    {"L3 / LEFT STICK", "L3 / 左摇杆"},
+    {"R3 / RIGHT STICK", "R3 / 右摇杆"},
+    {"CAP", "大写"},
+    {"SPACE", "空格"},
+    {"BKSP", "退格"},
+    {"CLEAR", "清空"},
+    {"DONE", "完成"},
+    {"CANCEL", "取消"}
 };
 
 static const char *ui_translate(const char *s)
