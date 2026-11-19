@@ -656,8 +656,9 @@ case "$cmd" in
     case "$ENTRY_ROOT" in "$TF1"|"$TF2") ;; *) echo "refusing unexpected frontend root" >&2; exit 1 ;; esac
 
     if [ "$ENTRY_KIND" = compat ]; then
-      [ "$remove_action" = uninstall-compat ] || [ "$remove_action" = enable-compat ] || [ "$remove_action" = delete-compat ] || {
-        echo "compatibility entries require uninstall-compat, enable-compat or delete-compat" >&2; exit 1;
+      [ "$remove_action" = uninstall ] || [ "$remove_action" = uninstall-compat ] ||
+        [ "$remove_action" = enable-compat ] || [ "$remove_action" = delete-compat ] || {
+        echo "compatibility entries require uninstall, uninstall-compat, enable-compat or delete-compat" >&2; exit 1;
       }
       [ ! -L "$ENTRY_ROOT/.baseos" ] || { echo "refusing symlinked .baseos directory" >&2; exit 1; }
       [ ! -L "$ENTRY_ROOT/.baseos/compat" ] || { echo "refusing symlinked compatibility directory" >&2; exit 1; }
@@ -692,6 +693,28 @@ case "$cmd" in
       elif [ "$remove_action" = enable-compat ]; then
         rm -f -- "$disabled_marker"
         removed_label=COMPAT_ENABLED
+      elif [ "$remove_action" = uninstall ]; then
+        [ -f "$ENTRY_CONFIG" ] && [ ! -L "$ENTRY_CONFIG" ] || {
+          echo "refusing an absent or symlinked compatibility profile config" >&2
+          exit 1
+        }
+        rm -f -- "$ENTRY_CONFIG"
+        profiles_remain=no
+        for remaining_profile in "$compat_dir"/profiles/*.conf; do
+          [ -f "$remaining_profile" ] || continue
+          profiles_remain=yes
+          break
+        done
+        if [ "$profiles_remain" = yes ]; then
+          removed_label=PROFILE
+        else
+          remove_frontend_path_map "$ENTRY_ROOT" "$ENTRY_PACKAGE" || exit 1
+          remove_frontend_payload "$ENTRY_ROOT" "$ENTRY_PACKAGE" || exit 1
+          rm -rf -- "$expected_dir"
+          rm -rf -- "$compat_dir"
+          rm -f -- "$disabled_marker"
+          removed_label=COMPAT_PROGRAM
+        fi
       else
         remove_frontend_path_map "$ENTRY_ROOT" "$ENTRY_PACKAGE" || exit 1
         remove_frontend_payload "$ENTRY_ROOT" "$ENTRY_PACKAGE" || exit 1
