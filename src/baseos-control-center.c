@@ -85,6 +85,8 @@ enum { TEXT_ENTRY_NONE, TEXT_ENTRY_CREATE_PROFILE, TEXT_ENTRY_RENAME_PROFILE };
 
 static const char *ui_translate(const char *s);
 static void set_status(const char *message);
+static void load_ui_language(void);
+static void toggle_ui_language(void);
 
 static void stop_ui(int sig) { (void)sig; running = 0; }
 
@@ -713,6 +715,8 @@ static const UiTranslation ui_translations[] = {
     {"Rebooting into USB storage mode...", "正在重启并进入 USB 存储模式..."},
     {"Could not request USB storage mode", "无法请求 USB 存储模式"},
     {"USB storage request saved; rebooting", "USB 存储请求已保存，正在重启"},
+    {"Language changed to Chinese", "显示语言已切换为中文"},
+    {"Language changed to English", "显示语言已切换为英文"},
     {"L1 English", "L1 English"},
     {"L1 中文", "L1 中文"}
 };
