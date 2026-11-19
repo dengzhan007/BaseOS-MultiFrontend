@@ -309,11 +309,17 @@ done
 # delay. Because no frontend card has been mounted yet, TF2 can be exported as
 # a complete disk (partition table included); without TF2, export TF1's p7.
 USB_STORAGE_MODE=0
+USB_STORAGE_REQUESTED=0
+[ ! -e /data/usb-storage-next-boot ] || USB_STORAGE_REQUESTED=1
 /bin/mkdir -p /mnt/sdcard
-if { [ -e /run/boot-menu-held ] || /usr/sbin/boot-menu-held; } \
+if { [ "$USB_STORAGE_REQUESTED" -eq 1 ] || [ -e /run/boot-menu-held ] || /usr/sbin/boot-menu-held; } \
 	&& [ -x /usr/sbin/usb-storage-mode ] \
 	&& /usr/sbin/usb-storage-mode prepare; then
 	USB_STORAGE_MODE=1
+	[ "$USB_STORAGE_REQUESTED" -eq 0 ] || { /bin/rm -f /data/usb-storage-next-boot; /bin/sync; }
+elif [ "$USB_STORAGE_REQUESTED" -eq 1 ]; then
+	/bin/rm -f /data/usb-storage-next-boot
+	echo 'baseos: requested USB storage mode could not safely claim the data device' > /dev/kmsg
 fi
 # Sample the active-low H700 GPIO lines once. The vendor gpio-keys driver
 # does not maintain reliable EVIOCGKEY state during cold boot. Either L1 or R1
