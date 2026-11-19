@@ -465,6 +465,7 @@ static int load_catalog(void)
     if (old_selected_index >= 0) selected = old_selected_index;
     else if (prior_action >= 0) selected = entry_count + prior_action;
     else if (selected < 0) selected = 0;
+    if (entry_count == 0) selected = 2; /* open diagnostics when no frontend exists */
     if (selected >= selector_item_count()) selected = selector_item_count() - 1;
     if (selected < 0) selected = 0;
 
@@ -895,8 +896,18 @@ static int make_profile_id(const Frontend *entry, const char *name,
         candidate[base_len] = 0;
         strncat(candidate, suffix, sizeof(candidate) - strlen(candidate) - 1);
         char path[FIELD * 2];
+        char profile_directory[FIELD * 2];
+        if (strcmp(entry->kind, "compat") == 0) {
+            if (snprintf(profile_directory, sizeof(profile_directory),
+                         "%s/.baseos/compat/%s", entry->root, entry->package) >=
+                (int)sizeof(profile_directory))
+                return -1;
+        } else {
+            snprintf(profile_directory, sizeof(profile_directory), "%s",
+                     entry->package_dir);
+        }
         if (snprintf(path, sizeof(path), "%s/profiles/%s.conf",
-                     entry->package_dir, candidate) >= (int)sizeof(path))
+                     profile_directory, candidate) >= (int)sizeof(path))
             return -1;
         if (access(path, F_OK) != 0) {
             snprintf(id, capacity, "%s", candidate);
