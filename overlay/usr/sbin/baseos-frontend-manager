@@ -488,7 +488,8 @@ create_profile() {
     rm -f "$new_profile_tmp"
     return 1
   }
-  chmod 0644 "$new_profile_tmp" || { rm -f "$new_profile_tmp"; return 1; }
+  # FAT/exFAT cards may not support per-file chmod; the mount controls mode.
+  chmod 0644 "$new_profile_tmp" 2>/dev/null || :
   mv -f "$new_profile_tmp" "$new_profile_file" || {
     rm -f "$new_profile_tmp"
     return 1
@@ -519,7 +520,8 @@ rename_profile() {
     rm -f "$renamed_profile_tmp"
     return 1
   }
-  chmod 0644 "$renamed_profile_tmp" || { rm -f "$renamed_profile_tmp"; return 1; }
+  # FAT/exFAT cards may not support per-file chmod; the mount controls mode.
+  chmod 0644 "$renamed_profile_tmp" 2>/dev/null || :
   mv -f "$renamed_profile_tmp" "$ENTRY_CONFIG" || {
     rm -f "$renamed_profile_tmp"
     return 1
