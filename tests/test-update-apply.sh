@@ -87,7 +87,7 @@ EOF
 
   reset() {
     rm -f /tmp/flip.log /tmp/splash.log /tmp/reboot.log /tmp/card-probes /tmp/no-card \
-      /mnt/sdcard/baseos-boot.log /data/baseos-boot.log /tmp/baseos-boot.log
+      /mnt/sdcard/baseos-boot.log /data/baseos-boot.log /tmp/baseos-boot.log \
       /mnt/sdcard/*.bosupd.failed
     rm -rf /data/update
     rm -rf /etc/baseos /tmp/native-fdt
@@ -227,7 +227,7 @@ EOF
   no_flip "pre-1.0 layout"
   echo "ok"
 
-  echo "== a failed slot flip retains the payload =="
+  echo "== a failed slot flip quarantines the payload =="
   reset; make_payload rg40xxv "$SLOT_SECTORS" clean
   : > /tmp/fail-flip
   if baseos-update apply; then echo "FAIL: failed flip accepted" >&2; exit 1; fi
