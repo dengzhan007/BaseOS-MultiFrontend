@@ -25,6 +25,7 @@ QEMU smoke test does not prove hardware support on every target.
 | USB host controllers started by `h700_late_usb.ko` | RG SP: six root hubs present, adb over USB, sleep and wake, a USB audio adapter on the OTG port. RG40XX V and RG34XX SP: six root hubs present, adb over USB, sleep and wake | A device on one of the five controllers the module starts; the other eight targets |
 | Fast native loader (1.5.x) | Users report the 1.5.1 fast start on RG SP, RG40XX V, RG28XX, RG34XX SP, RG34XX and RG35XX Plus. RG28XX (1 GiB LPDDR4): the 1.5.2 loader with the zero-tuned LPDDR4 fix, warm restarts, sleep and a cold power-on | RG40XX H and RG CubeXX with 1.5.2 (both fell back to stock on 1.5.1); RG35XX H, RG35XX Pro and RG35XX SP |
 | `/usr/lib` served from a squashfs image | RG SP: update from the previous build through the updater, warm restarts, sleep and wake, all on-device checks. RG40XX V and RG34XX SP: update from 1.3.0, warm restarts, sleep and wake | The other eight targets; a normal power-off and power-on; a 32-bit program |
+| Cloud-built upgrade artifact | RG34XX: the artifact from the GitHub Actions run written to the card over USB, the updater restart into the new slot, trial confirmation, and the frontend back in 8.3 s with the card left writable and no `FSCK` record | The other targets; artifacts from a run whose caches were cold |
 
 ## 2. Boot and build constraints
 
@@ -33,6 +34,17 @@ QEMU smoke test does not prove hardware support on every target.
   [boot chain](00-boot-chain-and-partitions.md).
 - Boot-critical scripts must be executable. Tool source hashes must match the
   build stamp before packaging. See [image build](02-image-build-and-flash.md).
+- The container steps in `build-rootfs.sh`, `build-image.sh` and
+  `build-update.sh` are single-quoted arguments. A single quote inside one of
+  those bodies ends the argument early: `sh` receives a truncated script and
+  exits with `line N: syntax error: unexpected end of file`, naming one of the
+  leftover words as the script. Use double quotes inside those bodies. See
+  [cloud builds](02-image-build-and-flash.md#cloud-builds-github-actions).
+- A payload built without `--native-release` carries no `native-generation`,
+  so a native device rejects it during validation without ever showing a
+  progress bar and keeps the file on the card. CI ships
+  `manifest/native/rg34xx` and asserts the field before uploading. See
+  [cloud builds](02-image-build-and-flash.md#cloud-builds-github-actions).
 - `/dev/input` must not have a modification time of zero, or SDL without udev
   finds no gamepad. A kernel that registers its input devices within the first
   second leaves it at zero, so `rcS` sets it. See

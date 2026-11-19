@@ -141,6 +141,41 @@ selected target then gets its own preparation, rootfs, QEMU smoke test, image
 and verification artifacts. The one-target form is a short equivalent of the
 complete recipe in section 2.
 
+### Cloud builds (GitHub Actions)
+
+`.github/workflows/rg34xx-multi-frontend-test.yml` runs the whole chain on a
+runner so a weak workstation never has to build anything:
+
+1. install host tools, build the arm64 Alpine image, restore the H700 caches
+2. run the shell/Python logic tests
+3. `build-rootfs.sh`, `build-image.sh`, `build-update.sh`
+4. verify the payload on a copied image, then upload the artifacts
+
+Download the `RG34XX-MultiFrontend-Upgrade-<sha>` artifact, drop the `.bosupd`
+on the card, power on. `hardware_validation=not_performed_by_CI` in the build
+note means the image was only checked structurally.
+
+Two rules keep the artifact usable on real hardware:
+
+- **Pass the native boot files.** `build-image.sh` must receive
+  `--native-release manifest/native/rg34xx`. Without it the image carries no
+  `/etc/baseos/native-generation` and the update package has no
+  `native-generation=` field; a native device rejects such a payload during
+  validation, before any progress bar appears, and leaves the file on the card.
+  The committed files are the ones the handheld already boots (copied from
+  `/usr/share/baseos/native`), checked against the SHA-256 values in their
+  `manifest`.
+- **Never put a single quote inside a `sh -c '...'` body.** The container
+  scripts in `build-rootfs.sh`, `build-image.sh` and `build-update.sh` are one
+  single-quoted argument. An apostrophe ends that argument early, the rest of
+  the script becomes extra `sh` arguments, and the build dies with
+  `line N: syntax error: unexpected end of file`. Use double quotes inside
+  those bodies.
+
+The workflow asserts that the finished payload has a 64-hex
+`native-generation`, so a build with a missing native release fails in CI
+instead of publishing a package the device refuses.
+
 ## 4. Image geometry and verification
 
 The normalized p5 start becomes rootfs slot A. The environment selects
