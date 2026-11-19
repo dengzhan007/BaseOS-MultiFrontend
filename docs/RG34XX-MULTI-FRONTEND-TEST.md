@@ -22,7 +22,7 @@
 - A：临时启动当前前端，不改默认项；在列表末尾的操作行中，A 用于打开新建 profile、重命名或诊断页面。
 - Start：保存当前 profile 为默认前端并启动。
 - SELECT：启用/停用当前 profile。
-- L1：删除当前托管 profile 的配置文件；不会删除同包的其他 profile、共享程序或 profile userdata。
+- L1：删除当前托管/兼容 profile 的配置文件；同包其他 profile 仍在时保留共享程序，删除最后一个 profile 时才清理对应的程序包/兼容包装；不会删除 profile userdata、Games 或 Saves。
 - Y：确认删除整个前端程序包。托管前端、自动兼容前端和旧式 adapter 会分别调用对应的卸载路径。
 - B：退出选择器，继续使用已有默认项。
 - 列表末尾提供 **Create profile** 和 **Rename selected profile** 两个入口。它们以最近选中的托管/兼容 profile 为模板；新建时复制该 profile 的配置项并生成独立 profile ID，重命名只修改显示名称，不改变 profile ID 和 userdata。操作使用机身内置虚拟键盘，不需要把 TF 卡接到电脑。
