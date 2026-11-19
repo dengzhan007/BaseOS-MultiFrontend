@@ -415,7 +415,7 @@ static int load_catalog(void)
     int prior_action = -1;
     if (selected >= 0 && selected < old_entry_count)
         snprintf(prior_selected, sizeof(prior_selected), "%s", entries[selected].id);
-    else if (selected >= old_entry_count)
+    else if (old_entry_count > 0 && selected >= old_entry_count)
         prior_action = selected - old_entry_count;
 
     load_current_default();
@@ -605,50 +605,68 @@ static void draw_footer(const char *text)
 static void render_selector(void)
 {
     int w = (int)fb_var.xres;
-    int row_h = 50;
+    int row_h = 38;
+    int total = selector_item_count();
     char default_label[96];
     snprintf(default_label, sizeof(default_label), "Default: %s", current_default_id);
     draw_header("Frontend selector", default_label);
-    draw_text(28, 105, "Installed frontend profiles", 17, colour(157, 177, 194));
+    draw_text(28, 101, "Installed frontend profiles", 16, colour(157, 177, 194));
     char count[80];
     snprintf(count, sizeof(count), "%d profile(s)", entry_count);
-    draw_text(w - 180, 105, count, 14, colour(157, 177, 194));
-    int visible = (int)fb_var.yres > 430 ? 5 : 4;
-    if (entry_count > visible) {
-        if (selected < offset) offset = selected;
-        if (selected >= offset + visible) offset = selected - visible + 1;
-    } else offset = 0;
-    for (int i = 0; i < visible && offset + i < entry_count; ++i) {
-        int index = offset + i, y = 125 + i * row_h;
-        Frontend *e = &entries[index];
+    draw_text(w - 150, 101, count, 13, colour(157, 177, 194));
+
+    int visible = ((int)fb_var.yres - 150) / row_h;
+    if (visible < 3) visible = 3;
+    if (visible > 8) visible = 8;
+    if (selected < offset) offset = selected;
+    if (selected >= offset + visible) offset = selected - visible + 1;
+    if (offset > total - visible) offset = total - visible;
+    if (offset < 0) offset = 0;
+
+    for (int i = 0; i < visible && offset + i < total; ++i) {
+        int index = offset + i, y = 112 + i * row_h;
         int is_selected = index == selected;
-        fill_rect(20, y, w - 40, 42,
+        fill_rect(20, y, w - 40, 34,
                   is_selected ? colour(31, 69, 78) : colour(17, 27, 39));
-        if (is_selected) fill_rect(20, y, 5, 42, colour(63, 220, 183));
-        char label[220], meta[220];
-        snprintf(label, sizeof(label), "%s", e->label);
-        snprintf(meta, sizeof(meta), "%s / %s", e->package, e->profile);
-        draw_line(38, y + 21, label, 17,
-                  strcmp(e->status,"disabled")==0 ? colour(145,155,165) :
-                  is_selected ? colour(255,255,255) : colour(216,226,235), w - 260);
-        draw_line(38, y + 37, meta, 12, colour(145, 165, 180), w - 250);
-        const char *tag = strcmp(e->status,"disabled")==0 ? "[DISABLED]" :
-                          entry_is_default(e) ? "[DEFAULT]" :
-                          (strcmp(e->kind,"managed")==0 ? "[MANAGED]" : "[COMPAT]");
-        draw_text(w - 160, y + 26, tag, 11,
-                  strcmp(e->status,"disabled")==0 ? colour(236,164,108) :
-                  entry_is_default(e) ? colour(243,194,104) : colour(104,195,173));
+        if (is_selected) fill_rect(20, y, 5, 34, colour(63, 220, 183));
+        if (index < entry_count) {
+            Frontend *e = &entries[index];
+            char meta[220];
+            snprintf(meta, sizeof(meta), "%s / %s", e->package, e->profile);
+            draw_line(38, y + 17, e->label, 15,
+                      strcmp(e->status,"disabled")==0 ? colour(145,155,165) :
+                      is_selected ? colour(255,255,255) : colour(216,226,235), w - 260);
+            draw_line(38, y + 30, meta, 10, colour(145, 165, 180), w - 250);
+            const char *tag = strcmp(e->status,"disabled")==0 ? "[DISABLED]" :
+                              entry_is_default(e) ? "[DEFAULT]" :
+                              (strcmp(e->kind,"managed")==0 ? "[MANAGED]" :
+                               strcmp(e->kind,"compat")==0 ? "[COMPAT]" : "[LEGACY]");
+            draw_text(w - 158, y + 23, tag, 10,
+                      strcmp(e->status,"disabled")==0 ? colour(236,164,108) :
+                      entry_is_default(e) ? colour(243,194,104) : colour(104,195,173));
+        } else {
+            int action = index - entry_count;
+            const char *label = action == 0 ? "Create profile..." :
+                                action == 1 ? "Rename selected profile..." :
+                                              "BaseOS diagnostics";
+            const char *detail = action == 0 ?
+                (source_supports_profiles() ? "Create another independent configuration from the selected profile" :
+                                               "Select a managed or compatible profile first") :
+                action == 1 ?
+                (source_supports_profiles() ? "Change the selected profile's display name" :
+                                               "Select a managed or compatible profile first") :
+                "System, storage, battery and physical button tests";
+            draw_text(38, y + 16, label, 15,
+                      is_selected ? colour(255,255,255) :
+                      action == 2 ? colour(192,208,220) : colour(123,220,194));
+            draw_line(38, y + 29, detail, 10, colour(145,165,180), w - 75);
+        }
     }
-    int diag_y = 125 + visible * row_h + 3;
-    fill_rect(20, diag_y, w - 40, 39,
-              selected == entry_count ? colour(31,69,78) : colour(17,27,39));
-    draw_text(38, diag_y + 25, "BaseOS diagnostics", 16,
-              selected == entry_count ? colour(255,255,255) : colour(192,208,220));
     if (entry_count == 0) {
-        draw_text(30, 170, "No compatible frontend found.", 18, colour(240,190,112));
-        draw_text(30, 198, "Copy an intact frontend folder into Frontends/.", 15, colour(185,200,212));
+        draw_text(30, 426 - 20, "No compatible frontend found. Copy one into Frontends/.",
+                  12, colour(240,190,112));
     }
-    draw_footer("UP/DOWN Move   A Launch once   START Set default   SELECT Enable/disable   X Uninstall   B Exit");
+    draw_footer("A Open/Launch   START Default   SELECT Enable/disable   L1 Remove profile   Y Delete frontend");
 }
 
 static void render_confirm(void)
