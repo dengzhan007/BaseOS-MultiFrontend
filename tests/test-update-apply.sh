@@ -196,16 +196,14 @@ EOF
 
   echo "== a payload for another target is refused =="
   reset; make_payload rg35xxh "$SLOT_SECTORS" clean
-  set -x
   if baseos-update apply; then echo "FAIL: wrong target accepted" >&2; exit 1; fi
   no_flip "wrong target"
-  ls -la /mnt/sdcard/ 2>&1
-  cat /data/update/last-failure 2>&1
-  cat /mnt/sdcard/baseos-boot.log 2>&1
-  set +x
-  test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
-  test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed
-  grep -q 'reason=built for rg35xxh' /data/update/last-failure
+  test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd \
+    || { echo "FAIL: rejected package still on card" >&2; exit 1; }
+  test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed \
+    || { echo "FAIL: rejected package not quarantined" >&2; exit 1; }
+  grep -q 'reason=built for rg35xxh' /data/update/last-failure \
+    || { echo "FAIL: rejection reason missing" >&2; cat /data/update/last-failure >&2; exit 1; }
   echo "ok: rejected package quarantined with its reason"
 
   echo "== a payload for a different slot size is refused =="
