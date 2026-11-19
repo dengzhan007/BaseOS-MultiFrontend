@@ -88,7 +88,7 @@ if [ -s /run/usb-storage-device ]; then
 		storage_wait=$((storage_wait + 1))
 	done
 	if [ -e /run/usb-storage-ready ]; then
-		important_splash -1 "USB STORAGE: EJECT BEFORE RESTART"
+		important_splash -1 "USB STORAGE READY: UNPLUG WHEN IDLE"
 	else
 		log "USB storage gadget did not become ready"
 		important_splash -1 "USB STORAGE FAILED: POWER OFF"
