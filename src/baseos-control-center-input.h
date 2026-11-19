@@ -25,6 +25,11 @@ static inline int baseos_is_select_key(int code)
     return code == BTN_TL || code == BTN_SELECT;
 }
 
+static inline int baseos_button_test_exit_chord(int menu_down, int start_down)
+{
+    return menu_down && start_down;
+}
+
 static inline int baseos_is_start_key(int code)
 {
     return code == BTN_TR || code == BTN_START;
