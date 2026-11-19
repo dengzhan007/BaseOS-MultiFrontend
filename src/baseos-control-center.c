@@ -825,8 +825,9 @@ static void draw_header(const char *title, const char *subtitle)
     fill_rect(0, 69, w, 2, colour(41, 190, 165));
     draw_text(28, 37, "BASEOS / RG34XX", 23, colour(78, 220, 193));
     draw_text(28, 59, title, 19, colour(245, 248, 252));
-    draw_text(w - 142, 61, ui_chinese ? "L1 English" : "L1 中文", 11,
-              colour(173,190,205));
+    if (page_diagnostics == 1)
+        draw_text(w - 142, 61, ui_chinese ? "L1 English" : "L1 中文", 11,
+                  colour(173,190,205));
     /* Right-aligned status line. It used to start at a fixed x with a fixed
      * width, which clipped long package ids mid-glyph; measure first so the
      * text sits against the margin and ends in "..." when it cannot fit. */
