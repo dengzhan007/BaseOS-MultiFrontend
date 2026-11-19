@@ -233,9 +233,12 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
     cp /assets/boot.ttf "$R/usr/share/baseos/boot.ttf"
     [ -f /assets/OFL.txt ] && cp /assets/OFL.txt "$R/usr/share/baseos/boot.ttf.OFL.txt"
     cp /usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc "$R/usr/share/baseos/boot-cjk.ttc"
-    printf '%s\n' 'WenQuanYi Zen Hei; Alpine package font-wqy-zenhei; license GPL-2.0-only.' \
-      'The license text and upstream source are available from the package project.' \
-      'https://github.com/deepin-community/fonts-wqy-zenhei' \
+    # This block runs inside the single-quoted container script above, so the
+    # NOTICE text must not use single quotes: they would close that string and
+    # hand the rest of the script to sh as extra arguments.
+    printf "%s\n" "WenQuanYi Zen Hei; Alpine package font-wqy-zenhei; license GPL-2.0-only." \
+      "The license text and upstream source are available from the package project." \
+      "https://github.com/deepin-community/fonts-wqy-zenhei" \
       > "$R/usr/share/baseos/boot-cjk-font.NOTICE"
   fi
   # gptgrow: first-boot expand-to-fill of the FAT data partition.
