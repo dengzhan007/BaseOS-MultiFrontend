@@ -813,6 +813,218 @@ static void draw_stick(int cx, int cy, const char *label, int active)
               active ? colour(110, 245, 212) : colour(195, 210, 222));
 }
 
+static const char *const text_keyboard_keys[46] = {
+    "1","2","3","4","5","6","7","8","9","0",
+    "q","w","e","r","t","y","u","i","o","p",
+    "a","s","d","f","g","h","j","k","l","-",
+    "z","x","c","v","b","n","m","_",".","'",
+    "CAP","SPACE","BKSP","CLEAR","DONE","CANCEL"
+};
+
+static void begin_profile_text_entry(int mode)
+{
+    int index = source_entry_index();
+    if (index < 0 || !source_supports_profiles()) {
+        set_status("Select a managed or compatible profile first");
+        return;
+    }
+    text_entry_mode = mode;
+    text_entry_cursor = 0;
+    text_entry_caps = 0;
+    text_entry[0] = 0;
+    if (mode == TEXT_ENTRY_RENAME_PROFILE) {
+        if (read_config_value(entries[index].profile_config, "display_name",
+                              text_entry, sizeof(text_entry)) != 0)
+            snprintf(text_entry, sizeof(text_entry), "%s", entries[index].profile);
+    }
+    page_diagnostics = 3;
+    set_status(mode == TEXT_ENTRY_CREATE_PROFILE ?
+               "Enter a name for the new profile" : "Enter the new profile name");
+}
+
+static int make_profile_id(const Frontend *entry, const char *name,
+                           char *id, size_t capacity)
+{
+    char base[23];
+    size_t used = 0;
+    int previous_dash = 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; ++p) {
+        if (isalnum(*p)) {
+            if (used < sizeof(base) - 1)
+                base[used++] = (char)tolower(*p);
+            previous_dash = 0;
+        } else if (used && !previous_dash && used < sizeof(base) - 1) {
+            base[used++] = '-';
+            previous_dash = 1;
+        }
+    }
+    while (used && base[used - 1] == '-') --used;
+    if (!used) {
+        memcpy(base, "profile", 7);
+        used = 7;
+    }
+    base[used] = 0;
+
+    for (int serial = 1; serial < 1000; ++serial) {
+        char candidate[23], suffix[8] = "";
+        size_t base_len = used;
+        if (serial > 1) {
+            snprintf(suffix, sizeof(suffix), "-%d", serial);
+            size_t suffix_len = strlen(suffix);
+            if (base_len + suffix_len > 22) base_len = 22 - suffix_len;
+        }
+        memcpy(candidate, base, base_len);
+        candidate[base_len] = 0;
+        strncat(candidate, suffix, sizeof(candidate) - strlen(candidate) - 1);
+        char path[FIELD * 2];
+        if (snprintf(path, sizeof(path), "%s/profiles/%s.conf",
+                     entry->package_dir, candidate) >= (int)sizeof(path))
+            return -1;
+        if (access(path, F_OK) != 0) {
+            snprintf(id, capacity, "%s", candidate);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static void finish_profile_text_entry(void)
+{
+    int index = source_entry_index();
+    if (index < 0 || !source_supports_profiles()) {
+        set_status("Selected profile is no longer available");
+        return;
+    }
+    size_t length = strlen(text_entry);
+    while (length && text_entry[length - 1] == ' ')
+        text_entry[--length] = 0;
+    size_t first = 0;
+    while (text_entry[first] == ' ') ++first;
+    if (first) memmove(text_entry, text_entry + first, strlen(text_entry + first) + 1);
+    if (!text_entry[0]) {
+        set_status("Profile name cannot be empty");
+        return;
+    }
+
+    Frontend *entry = &entries[index];
+    selected = index;
+    if (text_entry_mode == TEXT_ENTRY_CREATE_PROFILE) {
+        char profile_id[23], new_id[64];
+        if (make_profile_id(entry, text_entry, profile_id, sizeof(profile_id)) != 0) {
+            set_status("Could not generate a unique profile ID");
+            return;
+        }
+        if (run_manager_args("create-profile", entry->id, profile_id, text_entry) != 0) {
+            set_status("Profile creation failed; check the profile name");
+            return;
+        }
+        snprintf(new_id, sizeof(new_id), "%s--%s", entry->package, profile_id);
+        text_entry_mode = TEXT_ENTRY_NONE;
+        page_diagnostics = 0;
+        snprintf(profile_source_id, sizeof(profile_source_id), "%s", new_id);
+        reload_catalog();
+        int created = find_entry_by_id(new_id);
+        if (created >= 0) selected = created;
+        set_status("Profile created");
+    } else if (text_entry_mode == TEXT_ENTRY_RENAME_PROFILE) {
+        if (run_manager_args("rename-profile", entry->id, text_entry, NULL) != 0) {
+            set_status("Profile rename failed; check the profile name");
+            return;
+        }
+        text_entry_mode = TEXT_ENTRY_NONE;
+        page_diagnostics = 0;
+        reload_catalog();
+        int renamed = find_entry_by_id(profile_source_id);
+        if (renamed >= 0) selected = renamed;
+        set_status("Profile renamed");
+    }
+}
+
+static void handle_text_entry_key(int key)
+{
+    int row = text_entry_cursor / 10;
+    int col = text_entry_cursor % 10;
+    if (key == KEY_UP || key == KEY_DOWN || key == KEY_LEFT || key == KEY_RIGHT) {
+        if (key == KEY_UP && row > 0) --row;
+        else if (key == KEY_DOWN && row < 4) ++row;
+        else if (key == KEY_LEFT && col > 0) --col;
+        else if (key == KEY_RIGHT && col < (row == 4 ? 5 : 9)) ++col;
+        if (row == 4 && col > 5) col = 5;
+        text_entry_cursor = row * 10 + col;
+        return;
+    }
+    if (key == BTN_EAST) {
+        size_t len = strlen(text_entry);
+        if (len) text_entry[len - 1] = 0;
+        return;
+    }
+    if (key == BTN_TL2) {
+        text_entry_mode = TEXT_ENTRY_NONE;
+        page_diagnostics = 0;
+        set_status("Cancelled");
+        return;
+    }
+    if (baseos_is_start_key(key)) {
+        finish_profile_text_entry();
+        return;
+    }
+    if (key != BTN_SOUTH) return;
+
+    const char *selected_key = text_keyboard_keys[text_entry_cursor];
+    if (strcmp(selected_key, "CAP") == 0) {
+        text_entry_caps = !text_entry_caps;
+    } else if (strcmp(selected_key, "SPACE") == 0) {
+        size_t len = strlen(text_entry);
+        if (len < sizeof(text_entry) - 1) {
+            text_entry[len] = ' ';
+            text_entry[len + 1] = 0;
+        }
+    } else if (strcmp(selected_key, "BKSP") == 0) {
+        size_t len = strlen(text_entry);
+        if (len) text_entry[len - 1] = 0;
+    } else if (strcmp(selected_key, "CLEAR") == 0) {
+        text_entry[0] = 0;
+    } else if (strcmp(selected_key, "DONE") == 0) {
+        finish_profile_text_entry();
+    } else if (strcmp(selected_key, "CANCEL") == 0) {
+        text_entry_mode = TEXT_ENTRY_NONE;
+        page_diagnostics = 0;
+        set_status("Cancelled");
+    } else {
+        size_t len = strlen(text_entry);
+        if (len < sizeof(text_entry) - 1) {
+            char ch = selected_key[0];
+            if (text_entry_caps && ch >= 'a' && ch <= 'z')
+                ch = (char)toupper((unsigned char)ch);
+            text_entry[len] = ch;
+            text_entry[len + 1] = 0;
+        }
+    }
+}
+
+static void render_text_entry(void)
+{
+    int w = (int)fb_var.xres;
+    draw_header(text_entry_mode == TEXT_ENTRY_CREATE_PROFILE ?
+                "Create frontend profile" : "Rename frontend profile",
+                "On-device keyboard");
+    draw_text(28, 112, "Profile name", 14, colour(123,192,180));
+    fill_rect(24, 126, w - 48, 42, colour(23, 39, 54));
+    draw_line(38, 153, text_entry, 19, colour(255,255,255), w - 76);
+    int cell_w = (w - 60) / 10;
+    for (int i = 0; i < 46; ++i) {
+        int row = i / 10;
+        int col = i % 10;
+        int cx = 30 + col * cell_w + cell_w / 2;
+        int cy = 204 + row * 42;
+        int width = cell_w - 4;
+        if (row == 4 && col >= 4) width = cell_w - 4;
+        draw_button_tile(cx, cy, width, 31, text_keyboard_keys[i],
+                         i == text_entry_cursor);
+    }
+    draw_footer("D-pad Move   A Select   B Backspace   START Save   CANCEL Exit");
+}
+
 static void render_button_test(void)
 {
     int w = (int)fb_var.xres;
