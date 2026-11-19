@@ -87,6 +87,7 @@ G4="$TMP/sys4/kernel/config/usb_gadget/g1"
 [ -L "$G4/configs/c.1/mass_storage.usb0" ]
 [ "$(cat "$G4/functions/mass_storage.usb0/lun.0/file")" = "$TMP/card.img" ]
 [ "$(cat "$G4/functions/mass_storage.usb0/lun.0/removable")" = 1 ]
+[ "$(cat "$G4/functions/mass_storage.usb0/lun.0/nofua")" = 0 ]
 [ "$(cat "$G4/configs/c.1/strings/0x409/configuration")" = "adb + usb storage" ]
 [ "$(cat "$G4/UDC")" = "5100000.udc-controller" ]
 
