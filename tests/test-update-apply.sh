@@ -88,6 +88,7 @@ EOF
   reset() {
     rm -f /tmp/flip.log /tmp/splash.log /tmp/reboot.log /tmp/card-probes /tmp/no-card \
       /mnt/sdcard/baseos-boot.log /data/baseos-boot.log /tmp/baseos-boot.log
+      /mnt/sdcard/*.bosupd.failed
     rm -rf /data/update
     rm -rf /etc/baseos /tmp/native-fdt
     rm -f /usr/sbin/native-health
@@ -197,8 +198,10 @@ EOF
   reset; make_payload rg35xxh "$SLOT_SECTORS" clean
   if baseos-update apply; then echo "FAIL: wrong target accepted" >&2; exit 1; fi
   no_flip "wrong target"
-  test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
-  echo "ok"
+  test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
+  test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed
+  grep -q 'reason=built for rg35xxh' /data/update/last-failure
+  echo "ok: rejected package quarantined with its reason"
 
   echo "== a payload for a different slot size is refused =="
   reset; make_payload rg40xxv 4096 clean
@@ -210,9 +213,11 @@ EOF
   reset; make_payload rg40xxv "$SLOT_SECTORS" corrupt
   if baseos-update apply; then echo "FAIL: corrupt image accepted" >&2; exit 1; fi
   no_flip "hash mismatch"
-  test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
+  test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
+  test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed
   grep -q "UPDATE FAILED" /tmp/splash.log || { echo "FAIL: no failure pill" >&2; exit 1; }
-  echo "ok: written but never committed"
+  grep -q 'reason=read-back SHA-256 mismatch' /data/update/last-failure
+  echo "ok: corrupted package quarantined; active slot never committed"
 
   echo "== a card with no A/B layout is left alone =="
   reset; make_payload rg40xxv "$SLOT_SECTORS" clean
@@ -228,7 +233,9 @@ EOF
   if baseos-update apply; then echo "FAIL: failed flip accepted" >&2; exit 1; fi
   rm -f /tmp/fail-flip
   no_flip "failed commit"
-  test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
+  test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
+  test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed
+  grep -q 'reason=image was written and verified, but GPT slot switch failed' /data/update/last-failure
   test ! -f /tmp/reboot.log
   echo "ok"
 
