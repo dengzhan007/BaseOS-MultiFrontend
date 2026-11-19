@@ -1145,6 +1145,20 @@ static int next_key(int timeout_ms)
     return -1;
 }
 
+static const char *frontend_delete_action(const Frontend *entry)
+{
+    if (strcmp(entry->kind, "managed") == 0) return "uninstall-package";
+    if (strcmp(entry->kind, "compat") == 0) return "delete-compat";
+    if (strcmp(entry->kind, "legacy-adapter") == 0) return "delete-legacy-adapter";
+    return NULL;
+}
+
+static void remember_profile_source(int index)
+{
+    if (index >= 0 && index < entry_count)
+        snprintf(profile_source_id, sizeof(profile_source_id), "%s", entries[index].id);
+}
+
 static void handle_selector_key(int key)
 {
     if (confirm_mode) {
@@ -1155,34 +1169,46 @@ static void handle_selector_key(int key)
         }
         if (key == BTN_SOUTH && selected < entry_count) {
             Frontend *e = &entries[selected];
-            const char *action = confirm_action == CONFIRM_PROFILE ? "uninstall" :
-                                 "uninstall-package";
-            if (run_manager(action, e->id) == 0)
-                set_status("Removed successfully");
+            const char *action = confirm_action == CONFIRM_PROFILE ?
+                                 "uninstall" : frontend_delete_action(e);
+            if (action && run_manager(action, e->id) == 0)
+                set_status(confirm_action == CONFIRM_PROFILE ?
+                           "Profile removed successfully" : "Frontend removed successfully");
             else
-                set_status("Removal failed");
+                set_status("Removal failed; manager rejected the operation");
             confirm_mode = CONFIRM_NONE;
             reload_catalog();
         }
         return;
     }
+
     if (key == KEY_UP || key == BTN_DPAD_UP) {
+        remember_profile_source(selected);
         if (selected > 0) --selected;
+        remember_profile_source(selected);
     } else if (key == KEY_DOWN || key == BTN_DPAD_DOWN) {
-        if (selected < entry_count) ++selected;
+        remember_profile_source(selected);
+        if (selected < selector_item_count() - 1) ++selected;
+        remember_profile_source(selected);
     } else if (key == BTN_EAST) {
         running = 0;
     } else if (key == BTN_SOUTH) {
-        if (selected == entry_count) {
+        if (selected < entry_count) {
+            if (strcmp(entries[selected].status, "disabled") != 0) {
+                if (write_selection(entries[selected].id) == 0)
+                    running = 0;
+                else
+                    set_status("Unable to write one-boot selection");
+            } else {
+                set_status("Enable this frontend before launching");
+            }
+        } else if (selected == entry_count) {
+            begin_profile_text_entry(TEXT_ENTRY_CREATE_PROFILE);
+        } else if (selected == entry_count + 1) {
+            begin_profile_text_entry(TEXT_ENTRY_RENAME_PROFILE);
+        } else {
             page_diagnostics = 1;
             set_status("Diagnostics");
-            return;
-        }
-        if (selected < entry_count && strcmp(entries[selected].status,"disabled") != 0) {
-            if (write_selection(entries[selected].id) == 0)
-                running = 0;
-            else
-                set_status("Unable to write one-boot selection");
         }
     } else if (baseos_is_start_key(key)) {
         if (selected < entry_count && strcmp(entries[selected].status,"disabled") != 0) {
@@ -1207,11 +1233,13 @@ static void handle_selector_key(int key)
         }
     } else if (key == BTN_WEST) {
         if (selected < entry_count && strcmp(entries[selected].kind,"managed") == 0) {
+            remember_profile_source(selected);
             confirm_action = CONFIRM_PROFILE;
             confirm_mode = 1;
         }
     } else if (key == BTN_NORTH) {
-        if (selected < entry_count) {
+        if (selected < entry_count && frontend_delete_action(&entries[selected])) {
+            remember_profile_source(selected);
             confirm_action = CONFIRM_PACKAGE;
             confirm_mode = 1;
         }
