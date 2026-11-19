@@ -67,6 +67,9 @@ jobs:
           sh ./tests/test-boot-menu-held.sh
           sh ./tests/test-boot-selector-held.sh
           sh ./tests/test-control-center-input.sh
+          sh ./tests/test-usb-gadget-adb.sh
+          sh ./tests/test-usb-storage-mode.sh
+          sh ./tests/test-update-apply.sh
 
       - name: Restore prepared RG34XX inputs
         run: sh ./fetch-prepared.sh rg34xx
