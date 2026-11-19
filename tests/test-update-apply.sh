@@ -195,7 +195,10 @@ EOF
   echo "ok"
 
   echo "== a payload for another target is refused =="
-  reset; make_payload rg35xxh "$SLOT_SECTORS" clean
+  set -x
+  reset
+  make_payload rg35xxh "$SLOT_SECTORS" clean
+  set +x
   if baseos-update apply; then echo "FAIL: wrong target accepted" >&2; exit 1; fi
   no_flip "wrong target"
   test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd \
