@@ -530,6 +530,114 @@ rename_profile() {
   printf '%s\n' "RENAMED_PROFILE:$ENTRY_PACKAGE/$ENTRY_PROFILE"
 }
 
+# Rename the frontend folder itself (Frontends/<name>). The selector exposes it
+# as an R1 shortcut on the row, next to X (delete). Managed packages also move
+# their instance data and record the old package id so the saved default keeps
+# pointing at the renamed frontend.
+rename_package() {
+  [ "$#" -eq 1 ] || return 2
+  rp_new=$1
+  valid_package_id "$rp_new" || {
+    echo "invalid frontend name (1-22 characters: letters, digits, '-' or '_')" >&2
+    return 1
+  }
+  case "$rp_new" in *--*) echo "frontend name cannot contain --" >&2; return 1 ;; esac
+  case "$ENTRY_KIND" in
+    managed|compat) ;;
+    *) echo "only managed and compatibility frontends can be renamed" >&2; return 1 ;;
+  esac
+  case "$ENTRY_ROOT" in
+    "$TF1"|"$TF2") ;;
+    *) echo "refusing unexpected card root" >&2; return 1 ;;
+  esac
+  [ ! -L "$ENTRY_ROOT/.baseos" ] || { echo "refusing symlinked .baseos directory" >&2; return 1; }
+  [ -d "$ENTRY_ROOT/Frontends" ] && [ ! -L "$ENTRY_ROOT/Frontends" ] || {
+    echo "frontend directory is missing or is a symlink" >&2
+    return 1
+  }
+  rp_meta=
+  if [ "$ENTRY_KIND" = compat ]; then
+    [ ! -L "$ENTRY_ROOT/.baseos/compat" ] || {
+      echo "refusing symlinked compatibility directory" >&2
+      return 1
+    }
+    rp_meta=$ENTRY_ROOT/.baseos/compat/$ENTRY_PACKAGE
+    [ -d "$rp_meta" ] && [ ! -L "$rp_meta" ] || {
+      echo "compatibility metadata is missing" >&2
+      return 1
+    }
+    baseos_frontend_read_value "$rp_meta/baseos-frontend.conf" compat_source ""
+    rp_old_source=$BASEOS_VALUE
+    case "$rp_old_source" in
+      ''|.|..|*/*|*'|'*) echo "invalid compatibility source name" >&2; return 1 ;;
+    esac
+    rp_old=$ENTRY_ROOT/Frontends/$rp_old_source
+  else
+    rp_old_source=$ENTRY_PACKAGE
+    rp_old=$ENTRY_ROOT/Frontends/$ENTRY_PACKAGE
+  fi
+  [ "$ENTRY_DIR" = "$rp_old" ] || { echo "refusing unexpected frontend path" >&2; return 1; }
+  [ -d "$rp_old" ] && [ ! -L "$rp_old" ] || {
+    echo "frontend folder is missing or is a symlink" >&2
+    return 1
+  }
+  if [ "$rp_old_source" = "$rp_new" ]; then
+    echo "the frontend already has that name" >&2
+    return 1
+  fi
+  rp_new_dir=$ENTRY_ROOT/Frontends/$rp_new
+  [ ! -e "$rp_new_dir" ] && [ ! -L "$rp_new_dir" ] || {
+    echo "a frontend folder named $rp_new already exists" >&2
+    return 1
+  }
+  [ ! -e "$ENTRY_ROOT/.baseos/compat/$rp_new" ] || {
+    echo "a compatibility frontend named $rp_new already exists" >&2
+    return 1
+  }
+
+  mv "$rp_old" "$rp_new_dir" || return 1
+
+  if [ "$ENTRY_KIND" = compat ]; then
+    rp_conf=$rp_meta/baseos-frontend.conf
+    rp_tmp=$(mktemp "$rp_conf.tmp.XXXXXX") || return 1
+    awk -v src="$rp_new" -v old="$rp_old_source" '
+      /^compat_source=/ { print "compat_source=" src; seen=1; next }
+      /^display_name=/ { if ($0 == "display_name=" old) { print "display_name=" src; next } }
+      { print }
+    ' "$rp_conf" > "$rp_tmp" || { rm -f "$rp_tmp"; return 1; }
+    chmod 0644 "$rp_tmp" 2>/dev/null || :
+    mv -f "$rp_tmp" "$rp_conf" || { rm -f "$rp_tmp"; return 1; }
+  else
+    rp_conf=$rp_new_dir/baseos-frontend.conf
+    if [ -f "$rp_conf" ] && [ ! -L "$rp_conf" ]; then
+      rp_tmp=$(mktemp "$rp_conf.tmp.XXXXXX") || return 1
+      awk -v prev="$ENTRY_PACKAGE" '
+        /^previous_package_id=/ { if (!seen) { print "previous_package_id=" prev; seen=1 } next }
+        { print }
+        END { if (!seen) print "previous_package_id=" prev }
+      ' "$rp_conf" > "$rp_tmp" || { rm -f "$rp_tmp"; return 1; }
+      chmod 0644 "$rp_tmp" 2>/dev/null || :
+      mv -f "$rp_tmp" "$rp_conf" || { rm -f "$rp_tmp"; return 1; }
+    fi
+    rp_instances=$ENTRY_ROOT/.baseos/instances
+    if [ -d "$rp_instances" ] && [ ! -L "$rp_instances" ]; then
+      for rp_instance in "$rp_instances/$ENTRY_PACKAGE--"*; do
+        [ -e "$rp_instance" ] || continue
+        [ -L "$rp_instance" ] && continue
+        rp_suffix=${rp_instance##*/}
+        rp_suffix=${rp_suffix#"$ENTRY_PACKAGE--"}
+        [ ! -e "$rp_instances/$rp_new--$rp_suffix" ] || continue
+        mv "$rp_instance" "$rp_instances/$rp_new--$rp_suffix" || return 1
+      done
+    fi
+  fi
+
+  remove_frontend_path_map "$ENTRY_ROOT" "$ENTRY_PACKAGE" || return 1
+  sync
+  build_catalog
+  printf '%s\n' "RENAMED_FRONTEND:$ENTRY_PACKAGE->$rp_new"
+}
+
 write_default() {
   default_id=$1
   case "$default_id" in
@@ -620,6 +728,12 @@ case "$cmd" in
     else
       rename_profile "$3"
     fi
+    ;;
+  rename-package)
+    [ "$#" -eq 3 ] || exit 2
+    build_catalog
+    find_catalog_entry "$2" || { echo "frontend profile not found: $2" >&2; exit 1; }
+    rename_package "$3"
     ;;
   set-default)
     [ "$#" -eq 2 ] || exit 2
@@ -787,7 +901,7 @@ case "$cmd" in
     esac
     ;;
   *)
-    echo "usage: baseos-frontend-manager [catalog|compat-scan|set-default ID|create-profile ID PROFILE_ID DISPLAY_NAME|rename-profile ID DISPLAY_NAME|disable-package ID|enable-package ID|uninstall ID|uninstall-package ID|uninstall-compat ID|enable-compat ID|delete-compat ID|disable-legacy ID|enable-legacy ID|delete-legacy-adapter ID]" >&2
+    echo "usage: baseos-frontend-manager [catalog|compat-scan|set-default ID|create-profile ID PROFILE_ID DISPLAY_NAME|rename-profile ID DISPLAY_NAME|rename-package ID NEW_NAME|disable-package ID|enable-package ID|uninstall ID|uninstall-package ID|uninstall-compat ID|enable-compat ID|delete-compat ID|disable-legacy ID|enable-legacy ID|delete-legacy-adapter ID]" >&2
     exit 2
     ;;
 esac

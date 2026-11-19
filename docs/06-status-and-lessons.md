@@ -68,6 +68,18 @@ QEMU smoke test does not prove hardware support on every target.
   a freshly written slot, all returning to the frontend untouched, with no new
   `FSCK` record on the card. See
   [the restart record](../experiments/h700-boot-speed/evidence/rg40xxv-plain-restart.txt).
+- A double-escaped C literal quietly disabled the selector's default badge for
+  a whole release: `strcspn(value, "\\r\\n")` compares against the two-character
+  `\r`-`\n` text, not carriage return and newline, so `frontend_id` kept its
+  trailing newline and never matched a catalog id. The badge code was present
+  and unreachable, and `strings` on the binary showed every translated label,
+  so only a framebuffer dump of the running page exposed it. When a C string
+  constant is pasted out of shell code, check the backslash count.
+- Reading key state with `EVIOCGKEY` is not reliable on the H700 nodes. The
+  button-test page now rebuilds a key-down bitmap from the events it already
+  reads, and accepts SELECT and START in either order when the second press
+  lands within about a second, so the exit chord no longer depends on the
+  ioctl or on both fingers arriving in the same poll.
 
 ## 3. Development validation
 

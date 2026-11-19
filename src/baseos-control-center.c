@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/utsname.h>
+#include <time.h>
 #include <unistd.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -68,6 +69,7 @@ static int page_diagnostics;
 static int diagnostics_selection;
 static int ui_chinese = 1;
 static int last_tested_key = -1;
+static long long last_select_ms;
 static char profile_source_id[64];
 static int text_entry_mode;
 static int text_entry_cursor;
@@ -81,7 +83,8 @@ static char current_default_id[64] = "auto";
 static volatile sig_atomic_t running = 1;
 
 enum { CONFIRM_NONE, CONFIRM_PROFILE, CONFIRM_PACKAGE };
-enum { TEXT_ENTRY_NONE, TEXT_ENTRY_CREATE_PROFILE, TEXT_ENTRY_RENAME_PROFILE };
+enum { TEXT_ENTRY_NONE, TEXT_ENTRY_CREATE_PROFILE, TEXT_ENTRY_RENAME_PROFILE,
+       TEXT_ENTRY_RENAME_PACKAGE };
 
 static const char *ui_translate(const char *s);
 static void set_status(const char *message);
@@ -89,6 +92,27 @@ static void load_ui_language(void);
 static void toggle_ui_language(void);
 
 static void stop_ui(int sig) { (void)sig; running = 0; }
+
+/* Key state rebuilt from the event stream itself. EVIOCGKEY on the H700
+ * nodes has not been dependable, and the button-test exit chord is the only
+ * way out of that page, so the UI must not depend on the ioctl alone. */
+static unsigned char key_down_bits[KEY_MAX / 8 + 1];
+
+static long long now_ms(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+static void note_key_event(unsigned int code, int value)
+{
+    if (code > KEY_MAX) return;
+    if (value)
+        key_down_bits[code / 8] |= (unsigned char)(1u << (code % 8));
+    else
+        key_down_bits[code / 8] &= (unsigned char)~(1u << (code % 8));
+}
 
 static int bit_set(const unsigned long *bits, int n)
 {
@@ -163,6 +187,9 @@ static void close_inputs(void)
 
 static int key_is_down(int key)
 {
+    if (key >= 0 && key <= KEY_MAX &&
+        (key_down_bits[key / 8] & (1u << (key % 8))))
+        return 1;
     unsigned long state[(KEY_MAX + 8 * sizeof(unsigned long)) /
                         (8 * sizeof(unsigned long))];
     memset(state, 0, sizeof(state));
@@ -437,7 +464,7 @@ static void load_current_default(void)
     while (fgets(line, sizeof(line), fp)) {
         if (strncmp(line, "frontend_id=", 12) != 0) continue;
         char *value = line + 12;
-        value[strcspn(value, "\\r\\n")] = 0;
+        value[strcspn(value, "\r\n")] = 0;
         if (*value && strlen(value) < sizeof(current_default_id))
             snprintf(current_default_id, sizeof(current_default_id), "%s", value);
     }
@@ -460,7 +487,10 @@ static int find_entry_by_id(const char *id)
 
 static int selector_item_count(void)
 {
-    return entry_count + 4; /* create, rename, diagnostics, language */
+    /* create, diagnostics, language. Renaming a profile and renaming the
+     * whole frontend folder are key shortcuts on the frontend rows, so they
+     * no longer occupy rows of their own. */
+    return entry_count + 3;
 }
 
 static int source_entry_index(void)
@@ -533,7 +563,7 @@ static int load_catalog(void)
     if (old_selected_index >= 0) selected = old_selected_index;
     else if (prior_action >= 0) selected = entry_count + prior_action;
     else if (selected < 0) selected = 0;
-    if (entry_count == 0) selected = 2; /* open diagnostics when no frontend exists */
+    if (entry_count == 0) selected = 1; /* open diagnostics when no frontend exists */
     if (selected >= selector_item_count()) selected = selector_item_count() - 1;
     if (selected < 0) selected = 0;
 
@@ -637,7 +667,7 @@ static const UiTranslation ui_translations[] = {
     {"[COMPAT]", "[兼容]"},
     {"[LEGACY]", "[旧式]"},
     {"No compatible frontend found. Copy one into Frontends/.", "未发现兼容前端，请将前端放入 Frontends/。"},
-    {"A Open/Launch   START Default   SELECT Enable/disable   L1 Remove profile   X Delete frontend", "A 打开/启动  START 设为默认  SELECT 启用/禁用  L1 删除配置  X 删除前端"},
+    {"A Launch  START Default  SELECT On/off  L1 Profile  Y Profile name  R1 Frontend  X Delete", "A 启动  START 默认  SELECT 启停  L1 删配置  Y 改配置名  R1 改前端名  X 删前端"},
     {"Confirm removal", "确认删除"},
     {"This cannot be undone", "此操作无法撤销"},
     {"Remove this configuration profile?", "确定删除此配置？"},
@@ -684,13 +714,13 @@ static const UiTranslation ui_translations[] = {
     {"Left stick Y axis", "左摇杆 Y 轴"},
     {"Right stick X axis", "右摇杆 X 轴"},
     {"Right stick Y axis", "右摇杆 Y 轴"},
-    {"Hold SELECT + START together to return to diagnostics", "同时按住 SELECT + START 返回诊断页面"},
+    {"Exit: hold SELECT + START (press one, then the other)", "退出：按住 SELECT + START（先按一个再按另一个也可以）"},
     {"Create frontend profile", "新建前端配置"},
     {"Rename frontend profile", "重命名前端配置"},
     {"On-device keyboard", "设备键盘"},
     {"Profile name", "配置名称"},
     {"D-pad Move   A Select   B Backspace   START Save   MENU Exit", "十字键移动  A 输入  B 退格  START 保存  MENU 退出"},
-    {"Press buttons and move sticks; SELECT + START exits", "按键或移动摇杆；同时按 SELECT + START 退出"},
+    {"Press buttons and move sticks; hold SELECT then START to exit", "按键或移动摇杆；退出请按住 SELECT 再按 START"},
     {"A Open button test   B Frontend selector   START Refresh", "A 打开按键测试  B 返回前端选择  START 刷新"},
     {"A Open/Launch", "A 打开/启动"},
     {"Cancelled", "已取消"},
@@ -900,7 +930,7 @@ static void render_selector(void)
                       disabled ? colour(145, 155, 165) :
                       is_selected ? colour(255, 255, 255) : colour(216, 226, 235),
                       w - 210);
-            draw_line(38, y + 39, meta, 13, colour(145, 165, 180), w - 210);
+            draw_line(38, y + 39, meta, 14, colour(178, 196, 210), w - 210);
             if (entry_is_default(e)) {
                 draw_badge(w - 30, y + 13, ui_chinese ? "默认" : "DEFAULT", 14,
                            colour(243, 194, 104), colour(28, 32, 38));
@@ -915,22 +945,21 @@ static void render_selector(void)
             const char *label = action == 0 ?
                                 (ui_chinese ? "新建配置…" : "Create profile...") :
                                 action == 1 ?
-                                (ui_chinese ? "重命名配置…" : "Rename selected profile...") :
-                                action == 2 ?
                                 (ui_chinese ? "BaseOS 诊断" : "BaseOS diagnostics") :
                                 (ui_chinese ? "语言：中文（按 A 切换 English）" :
                                               "Language: English (press A for 中文)");
             char detail[220];
-            if (action <= 1) {
+            if (action == 0) {
                 if (src_label && source_supports_profiles())
                     snprintf(detail, sizeof(detail),
-                             ui_chinese ? "来源：%s（左右键切换）" :
-                                          "From: %s (left/right changes it)", src_label);
+                             ui_chinese ? "为 %s 新建配置（左右键切换来源）" :
+                                          "New profile for %s (left/right changes it)",
+                             src_label);
                 else
                     snprintf(detail, sizeof(detail),
-                             ui_chinese ? "先把光标停在托管或兼容配置上再操作" :
-                                          "Select a managed or compatible profile first");
-            } else if (action == 2) {
+                             ui_chinese ? "先把光标停在托管或兼容前端上再操作" :
+                                          "Select a managed or compatible frontend first");
+            } else if (action == 1) {
                 snprintf(detail, sizeof(detail),
                          ui_chinese ? "系统、存储、电池与实体按键测试" :
                                       "System, storage, battery and button tests");
@@ -941,8 +970,8 @@ static void render_selector(void)
             }
             draw_text(38, y + 20, label, 19,
                       is_selected ? colour(255, 255, 255) :
-                      action >= 2 ? colour(192, 208, 220) : colour(123, 220, 194));
-            draw_line(38, y + 38, detail, 13, colour(145, 165, 180), w - 75);
+                      action >= 1 ? colour(192, 208, 220) : colour(123, 220, 194));
+            draw_line(38, y + 38, detail, 13, colour(160, 180, 196), w - 75);
         }
     }
     if (entry_count == 0) {
@@ -952,8 +981,8 @@ static void render_selector(void)
                   15, colour(240, 190, 112));
     }
     draw_footer(ui_chinese ?
-        "A 启动  START 设为默认  SELECT 启用/禁用  L1 删除配置  X 删除前端" :
-        "A Launch  START Default  SELECT Enable/disable  L1 Remove profile  X Delete frontend");
+        "A 启动  START 默认  SELECT 启停  L1 删配置  Y 改配置名  R1 改前端名  X 删前端" :
+        "A Launch  START Default  SELECT On/off  L1 Profile  Y Profile name  R1 Frontend  X Delete");
 }
 
 static void render_confirm(void)
@@ -1161,10 +1190,15 @@ static void begin_profile_text_entry(int mode)
         if (read_config_value(entries[index].profile_config, "display_name",
                               text_entry, sizeof(text_entry)) != 0)
             snprintf(text_entry, sizeof(text_entry), "%s", entries[index].profile);
+    } else if (mode == TEXT_ENTRY_RENAME_PACKAGE) {
+        snprintf(text_entry, sizeof(text_entry), "%s", entries[index].package);
     }
     page_diagnostics = 3;
     set_status(mode == TEXT_ENTRY_CREATE_PROFILE ?
-               "Enter a name for the new profile" : "Enter the new profile name");
+               "Enter a name for the new profile" :
+               mode == TEXT_ENTRY_RENAME_PROFILE ?
+               "Enter the new profile name" :
+               "Enter the new frontend folder name");
 }
 
 static int make_profile_id(const Frontend *entry, const char *name,
@@ -1272,6 +1306,25 @@ static void finish_profile_text_entry(void)
         int renamed = find_entry_by_id(profile_source_id);
         if (renamed >= 0) selected = renamed;
         set_status("Profile renamed");
+    } else if (text_entry_mode == TEXT_ENTRY_RENAME_PACKAGE) {
+        /* The entry pointer dies with the catalog reload below, so keep the
+         * identifiers before renaming. A managed package changes its profile
+         * ids; a compatibility package keeps them and only the folder moves. */
+        char kept_profile[64], renamed_id[64], previous_id[64];
+        snprintf(kept_profile, sizeof(kept_profile), "%s", entry->profile);
+        snprintf(previous_id, sizeof(previous_id), "%s", entry->id);
+        if (run_manager_args("rename-package", entry->id, text_entry, NULL) != 0) {
+            set_status("Frontend rename failed; check the name");
+            return;
+        }
+        text_entry_mode = TEXT_ENTRY_NONE;
+        page_diagnostics = 0;
+        snprintf(renamed_id, sizeof(renamed_id), "%s--%s", text_entry, kept_profile);
+        reload_catalog();
+        int renamed = find_entry_by_id(previous_id);
+        if (renamed < 0) renamed = find_entry_by_id(renamed_id);
+        selected = renamed >= 0 ? renamed : index;
+        set_status("Frontend renamed");
     }
 }
 
@@ -1341,9 +1394,13 @@ static void render_text_entry(void)
 {
     int w = (int)fb_var.xres;
     draw_header(text_entry_mode == TEXT_ENTRY_CREATE_PROFILE ?
-                "Create frontend profile" : "Rename frontend profile",
+                "Create frontend profile" :
+                text_entry_mode == TEXT_ENTRY_RENAME_PROFILE ?
+                "Rename frontend profile" : "Rename frontend folder",
                 "On-device keyboard");
-    draw_text(28, 110, ui_chinese ? "配置名称" : "Profile name", 16,
+    draw_text(28, 110, text_entry_mode == TEXT_ENTRY_RENAME_PACKAGE ?
+              (ui_chinese ? "前端文件夹名" : "Frontend folder name") :
+              (ui_chinese ? "配置名称" : "Profile name"), 16,
               colour(123,192,180));
     fill_rect(24, 124, w - 48, 44, colour(23, 39, 54));
     draw_line(38, 153, text_entry, 22, colour(255,255,255), w - 76);
@@ -1405,11 +1462,12 @@ static void render_button_test(void)
     draw_button_tile(dpad_x + 40, cy, 42, 30, "RIGHT",
                      last_tested_key == KEY_RIGHT);
 
-    /* Face buttons, labelled with the printed names. */
-    draw_button_tile(face_x, cy - 36, 42, 30, "Y", last_tested_key == BTN_C);
-    draw_button_tile(face_x - 42, cy, 42, 30, "X", last_tested_key == BTN_NORTH);
-    draw_button_tile(face_x + 42, cy, 42, 30, "B", last_tested_key == BTN_EAST);
-    draw_button_tile(face_x, cy + 36, 42, 30, "A", last_tested_key == BTN_SOUTH);
+    /* Face buttons, labelled with the printed names in the Nintendo layout
+     * used by this shell: X on top, Y on the left, A on the right, B below. */
+    draw_button_tile(face_x, cy - 36, 42, 30, "X", last_tested_key == BTN_NORTH);
+    draw_button_tile(face_x - 42, cy, 42, 30, "Y", last_tested_key == BTN_C);
+    draw_button_tile(face_x + 42, cy, 42, 30, "A", last_tested_key == BTN_SOUTH);
+    draw_button_tile(face_x, cy + 36, 42, 30, "B", last_tested_key == BTN_EAST);
 
     /* Analog sticks and their push buttons are shown even on models without
      * physical sticks, so the same page documents the full H700 control set. */
@@ -1421,8 +1479,8 @@ static void render_button_test(void)
                last_tested_key == TEST_AXIS_RX || last_tested_key == TEST_AXIS_RY);
 
     draw_footer(ui_chinese ?
-        "同时按住 SELECT + START 返回诊断页" :
-        "Hold SELECT + START together to return to diagnostics");
+        "退出：按住 SELECT + START（先按一个再按另一个也可以）" :
+        "Exit: hold SELECT + START (press one, then the other)");
 }
 
 static void render_text_entry(void);
@@ -1454,6 +1512,7 @@ static int next_key(int timeout_ms)
         if (!(pfd[i].revents & POLLIN)) continue;
         struct input_event ev;
         while (read(inputs[i].fd, &ev, sizeof(ev)) == sizeof(ev)) {
+            if (ev.type == EV_KEY) note_key_event(ev.code, ev.value);
             if (ev.type == EV_ABS) {
                 switch (ev.code) {
                 case ABS_X: return TEST_AXIS_LX;
@@ -1534,19 +1593,17 @@ static void handle_selector_key(int key)
     }
 
     if (key == KEY_UP || key == BTN_DPAD_UP) {
-        /* The list wraps: UP on the first row lands on the last one. */
-        remember_profile_source(selected);
+        /* The list wraps: UP on the first row lands on the last one. Moving
+         * the cursor must not retarget the "create profile" source: that
+         * choice belongs to the row and is changed with left/right only. */
         selected = selected > 0 ? selected - 1 : selector_item_count() - 1;
-        remember_profile_source(selected);
     } else if (key == KEY_DOWN || key == BTN_DPAD_DOWN) {
-        remember_profile_source(selected);
         selected = selected + 1 < selector_item_count() ? selected + 1 : 0;
-        remember_profile_source(selected);
     } else if ((key == KEY_LEFT || key == BTN_DPAD_LEFT) &&
-               (selected == entry_count || selected == entry_count + 1)) {
+               selected == entry_count) {
         cycle_profile_source(-1);
     } else if ((key == KEY_RIGHT || key == BTN_DPAD_RIGHT) &&
-               (selected == entry_count || selected == entry_count + 1)) {
+               selected == entry_count) {
         cycle_profile_source(1);
     } else if (key == BTN_EAST) {
         running = 0;
@@ -1563,8 +1620,6 @@ static void handle_selector_key(int key)
         } else if (selected == entry_count) {
             begin_profile_text_entry(TEXT_ENTRY_CREATE_PROFILE);
         } else if (selected == entry_count + 1) {
-            begin_profile_text_entry(TEXT_ENTRY_RENAME_PROFILE);
-        } else if (selected == entry_count + 2) {
             page_diagnostics = 1;
             diagnostics_selection = 0;
             set_status("Diagnostics");
@@ -1599,6 +1654,20 @@ static void handle_selector_key(int key)
             confirm_action = CONFIRM_PROFILE;
             confirm_mode = 1;
         }
+    } else if (key == BTN_C) {
+        /* Printed Y: rename the selected profile, the way X deletes. */
+        if (selected < entry_count && (strcmp(entries[selected].kind,"managed") == 0 ||
+            strcmp(entries[selected].kind,"compat") == 0)) {
+            remember_profile_source(selected);
+            begin_profile_text_entry(TEXT_ENTRY_RENAME_PROFILE);
+        }
+    } else if (key == BTN_Z) {
+        /* Printed R1: rename the frontend folder itself. */
+        if (selected < entry_count && (strcmp(entries[selected].kind,"managed") == 0 ||
+            strcmp(entries[selected].kind,"compat") == 0)) {
+            remember_profile_source(selected);
+            begin_profile_text_entry(TEXT_ENTRY_RENAME_PACKAGE);
+        }
     } else if (key == BTN_NORTH) {
         if (selected < entry_count && frontend_delete_action(&entries[selected])) {
             remember_profile_source(selected);
@@ -1621,7 +1690,8 @@ static void handle_diagnostics_key(int key)
             if (diagnostics_selection == 0) {
                 page_diagnostics = 2;
                 last_tested_key = -1;
-                set_status("Press buttons and move sticks; SELECT + START exits");
+                last_select_ms = 0;
+                set_status("Press buttons and move sticks; hold SELECT then START to exit");
             } else {
                 request_usb_storage_mode();
             }
@@ -1633,13 +1703,24 @@ static void handle_diagnostics_key(int key)
             set_status("Diagnostics refreshed");
         }
     } else if (page_diagnostics == 2) {
-        /* A and B are testable inputs. Exit only through the deliberate
-         * SELECT + START chord so neither face button is consumed as Back. */
-        if (baseos_is_button_test_exit_chord(
-                key_is_down(BTN_TL) || key_is_down(BTN_SELECT),
-                key_is_down(BTN_TR) || key_is_down(BTN_START))) {
+        /* A and B are testable inputs, so leaving needs a deliberate chord.
+         * The two presses rarely land in the same event: accept either order,
+         * as long as the second one follows within a little over a second. */
+        long long now = now_ms();
+        int select_down = key_is_down(BTN_TL) || key_is_down(BTN_SELECT);
+        int start_down = key_is_down(BTN_TR) || key_is_down(BTN_START);
+        int chord = 0;
+        if (baseos_is_select_key(key)) {
+            last_select_ms = now;
+            chord = start_down;
+        } else if (baseos_is_start_key(key)) {
+            chord = select_down ||
+                    (last_select_ms && now - last_select_ms <= 1200);
+        }
+        if (chord) {
             page_diagnostics = 1;
             last_tested_key = -1;
+            last_select_ms = 0;
             set_status("Diagnostics");
         } else {
             last_tested_key = key;

@@ -335,4 +335,33 @@ run_manager uninstall compat-profile--base
 [ ! -e "$COMPAT_PROGRAM" ] || fail "removing the last compatibility profile left its isolated frontend payload"
 [ "$(sed -n 's/^frontend_id=//p' "$CONFIG" | tail -n 1)" != compat-profile--base ] || fail "deleted compatibility default remained pinned"
 
+# The selector renames the frontend folder itself (R1) instead of only the
+# profile label. The folder, the instance data and the saved default all have
+# to follow, and the new folder name has to be a legal package id.
+RENAME_SOURCE=$TF1/Frontends/rename-src
+mkdir -p "$RENAME_SOURCE/profiles" "$TF1/.baseos/instances/rename-src--base/data"
+: > "$RENAME_SOURCE/launch.sh"
+cat > "$RENAME_SOURCE/baseos-frontend.conf" <<'EOF'
+package_api=1
+display_name=Rename Source
+priority=100
+EOF
+cat > "$RENAME_SOURCE/profiles/base.conf" <<'EOF'
+profile_api=1
+display_name=Base
+priority=100
+EOF
+printf 'keep\n' > "$TF1/.baseos/instances/rename-src--base/data/marker"
+run_manager catalog
+run_manager set-default rename-src--base
+run_manager rename-package rename-src--base rename-dst
+[ -d "$TF1/Frontends/rename-dst" ] || fail "rename-package did not move the frontend folder"
+[ ! -e "$RENAME_SOURCE" ] || fail "rename-package left the old frontend folder behind"
+[ -f "$TF1/.baseos/instances/rename-dst--base/data/marker" ] || fail "rename-package did not move the frontend instance data"
+grep -F -q 'rename-dst--base|' "$CATALOG" || fail "catalog did not pick up the renamed frontend"
+[ "$(sed -n 's/^frontend_id=//p' "$CONFIG" | tail -n 1)" = rename-dst--base ] || fail "renamed frontend did not keep the saved default"
+if run_manager rename-package rename-dst--base "bad name"; then
+  fail "rename-package accepted an invalid frontend name"
+fi
+
 echo "PASS: frontend manager catalog, profile/full uninstall, legacy adapter selector lifecycle, data retention, package rename/default migration and symlink guard"
