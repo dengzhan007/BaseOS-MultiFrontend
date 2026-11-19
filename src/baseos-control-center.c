@@ -1243,7 +1243,8 @@ static void handle_selector_key(int key)
             }
         }
     } else if (key == BTN_WEST) {
-        if (selected < entry_count && strcmp(entries[selected].kind,"managed") == 0) {
+        if (selected < entry_count && (strcmp(entries[selected].kind,"managed") == 0 ||
+            strcmp(entries[selected].kind,"compat") == 0)) {
             remember_profile_source(selected);
             confirm_action = CONFIRM_PROFILE;
             confirm_mode = 1;
