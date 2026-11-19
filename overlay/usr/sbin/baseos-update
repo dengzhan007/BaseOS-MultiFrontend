@@ -78,8 +78,8 @@ record_update_failure() {
 	failed_reason="$2"
 	mkdir -p "$STATE_DIR" 2>/dev/null || :
 	{
-		printf 'payload=%s\\n' "${failed_payload##*/}"
-		printf 'reason=%s\\n' "$failed_reason"
+		printf 'payload=%s\n' "${failed_payload##*/}"
+		printf 'reason=%s\n' "$failed_reason"
 	} > "$FAILURE" 2>/dev/null || :
 	update_log "${failed_payload##*/} failed: $failed_reason"
 }
@@ -573,7 +573,7 @@ status() {
 		printf "trial:   none (committed)\n"
 	fi
 	if [ -s "$FAILURE" ]; then
-		printf "last failure:\\n"
+		printf "last failure:\n"
 		sed 's/^/  /' "$FAILURE"
 	fi
 
