@@ -296,6 +296,12 @@ COMPAT_META=$TF1/.baseos/compat/compat-profile
 COMPAT_PROGRAM=$TF1/Frontends/compat-profile-payload
 mkdir -p "$COMPAT_META/profiles" "$COMPAT_PROGRAM/System"
 printf 'compat frontend payload\n' > "$COMPAT_PROGRAM/System/frontend"
+# Compatibility sidecars must include their generated launcher as part of
+# the package contract; discovery intentionally rejects incomplete wrappers.
+cat > "$COMPAT_META/launch.sh" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
 cat > "$COMPAT_META/baseos-frontend.conf" <<'EOF'
 package_api=1
 compat_api=1
