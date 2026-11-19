@@ -99,7 +99,7 @@ static int open_inputs(void)
                               (8 * sizeof(unsigned long))];
         unsigned long absbits[(ABS_MAX + 8 * sizeof(unsigned long)) /
                               (8 * sizeof(unsigned long))];
-        int fd, has_key_input, has_hat_input;
+        int fd, has_key_input, has_hat_input, has_axis_input;
         if (strncmp(de->d_name, "event", 5) != 0) continue;
         if (snprintf(path, sizeof(path), "/dev/input/%s", de->d_name) >=
             (int)sizeof(path)) continue;
@@ -109,17 +109,23 @@ static int open_inputs(void)
         memset(absbits, 0, sizeof(absbits));
         has_key_input = ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) >= 0 &&
             (bit_set(keybits, BTN_SOUTH) || bit_set(keybits, BTN_EAST) ||
-             bit_set(keybits, BTN_WEST) || bit_set(keybits, BTN_Z) ||
-             bit_set(keybits, BTN_NORTH) || bit_set(keybits, BTN_START) ||
-             bit_set(keybits, BTN_SELECT) ||
+             bit_set(keybits, BTN_WEST) || bit_set(keybits, BTN_C) ||
+             bit_set(keybits, BTN_Z) || bit_set(keybits, BTN_NORTH) ||
+             bit_set(keybits, BTN_START) || bit_set(keybits, BTN_SELECT) ||
              bit_set(keybits, BTN_TL) || bit_set(keybits, BTN_TR) ||
+             bit_set(keybits, BTN_TL2) || bit_set(keybits, BTN_TR2) ||
+             bit_set(keybits, BTN_THUMBL) || bit_set(keybits, BTN_THUMBR) ||
+             bit_set(keybits, BTN_MODE) ||
              bit_set(keybits, KEY_UP) || bit_set(keybits, KEY_DOWN) ||
              bit_set(keybits, KEY_LEFT) || bit_set(keybits, KEY_RIGHT) ||
              bit_set(keybits, BTN_DPAD_UP) || bit_set(keybits, BTN_DPAD_DOWN) ||
              bit_set(keybits, BTN_DPAD_LEFT) || bit_set(keybits, BTN_DPAD_RIGHT));
         has_hat_input = ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), absbits) >= 0 &&
             (bit_set(absbits, ABS_HAT0X) || bit_set(absbits, ABS_HAT0Y));
-        if (!has_key_input && !has_hat_input) {
+        has_axis_input = ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), absbits) >= 0 &&
+            (bit_set(absbits, ABS_X) || bit_set(absbits, ABS_Y) ||
+             bit_set(absbits, ABS_RX) || bit_set(absbits, ABS_RY));
+        if (!has_key_input && !has_hat_input && !has_axis_input) {
             close(fd);
             continue;
         }
@@ -658,28 +664,89 @@ static const char *input_key_name(int key)
     }
 }
 
+static void draw_disc(int cx, int cy, int radius, uint32_t fill)
+{
+    for (int y = -radius; y <= radius; ++y)
+        for (int x = -radius; x <= radius; ++x)
+            if (x * x + y * y <= radius * radius)
+                put_pixel(cx + x, cy + y, fill);
+}
+
+static void draw_button_tile(int cx, int cy, int width, int height,
+                             const char *label, int active)
+{
+    uint32_t bg = active ? colour(35, 174, 150) : colour(38, 54, 70);
+    uint32_t fg = active ? colour(255, 255, 255) : colour(195, 210, 222);
+    fill_rect(cx - width / 2, cy - height / 2, width, height, bg);
+    int tw = text_width(label, 12);
+    draw_text(cx - tw / 2, cy + 4, label, 12, fg);
+}
+
+static void draw_stick(int cx, int cy, const char *label, int active)
+{
+    uint32_t rim = active ? colour(50, 220, 180) : colour(91, 112, 130);
+    draw_disc(cx, cy, 27, rim);
+    draw_disc(cx, cy, 21, colour(20, 32, 46));
+    draw_disc(cx, cy, 8, active ? colour(50, 220, 180) : colour(125, 145, 160));
+    int tw = text_width(label, 12);
+    draw_text(cx - tw / 2, cy + 48, label, 12,
+              active ? colour(110, 245, 212) : colour(195, 210, 222));
+}
+
 static void render_button_test(void)
 {
     int w = (int)fb_var.xres;
-    draw_header("Button test", "Input diagnostics");
-    draw_text(30, 122, "Press each physical control on the RG34XX.", 17,
+    int cx = w / 2;
+    int dpad_x = w * 22 / 100;
+    int face_x = w * 78 / 100;
+    int left_stick_x = w * 40 / 100;
+    int right_stick_x = w * 60 / 100;
+    int cy = 258;
+    int stick_y = 337;
+    draw_header("Button test", "Handheld control map");
+    draw_text(28, 99, "Press each control; the matching key lights up.", 14,
               colour(225,235,243));
-    draw_text(30, 174, "Detected input:", 14, colour(123,192,180));
-    draw_text(30, 218, last_tested_key < 0 ? "Waiting for input..." :
-              input_key_name(last_tested_key), 26, colour(245,248,252));
-    char code[80];
-    if (last_tested_key >= 0) {
-        snprintf(code, sizeof(code), "Linux input code: %d", last_tested_key);
-        draw_text(30, 258, code, 14, colour(170,190,205));
-    }
-    if (h700_keys)
-        draw_line(30, 288,
-                  "H700 pad: L1=BTN_WEST R1=BTN_Z L2=BTN_SELECT R2=BTN_START "
-                  "Select=BTN_TL Start=BTN_TR Menu=BTN_TL2",
-                  12, colour(150,170,188), w - 60);
-    draw_text(30, 316, "This test reads evdev events; it does not change mappings.", 13,
-              colour(170,190,205));
-    draw_footer("Press any key to test   A/B Back to diagnostics");
+
+    /* Shoulder controls and the device-specific H700 labels. */
+    draw_button_tile(w * 15 / 100, 137, 68, 27, "L2", last_tested_key == BTN_SELECT);
+    draw_button_tile(w * 30 / 100, 137, 68, 27, "L1", last_tested_key == BTN_WEST);
+    draw_button_tile(w * 70 / 100, 137, 68, 27, "R1", last_tested_key == BTN_Z);
+    draw_button_tile(w * 85 / 100, 137, 68, 27, "R2", last_tested_key == BTN_START);
+
+    /* Select / Menu / Start cluster. */
+    draw_button_tile(cx - 76, 183, 62, 25, "SELECT", last_tested_key == BTN_TL);
+    draw_button_tile(cx, 183, 62, 25, "MENU", last_tested_key == BTN_TL2);
+    draw_button_tile(cx + 76, 183, 62, 25, "START", last_tested_key == BTN_TR);
+
+    /* Four-way D-pad. */
+    draw_button_tile(dpad_x, cy - 30, 36, 27, "UP",
+                     last_tested_key == KEY_UP);
+    draw_button_tile(dpad_x, cy + 30, 36, 27, "DOWN",
+                     last_tested_key == KEY_DOWN);
+    draw_button_tile(dpad_x - 34, cy, 36, 27, "LEFT",
+                     last_tested_key == KEY_LEFT);
+    draw_button_tile(dpad_x + 34, cy, 36, 27, "RIGHT",
+                     last_tested_key == KEY_RIGHT);
+
+    /* Face buttons. */
+    draw_button_tile(face_x, cy - 34, 32, 27, "Y", last_tested_key == BTN_NORTH);
+    draw_button_tile(face_x - 36, cy, 32, 27, "X", last_tested_key == BTN_C);
+    draw_button_tile(face_x + 36, cy, 32, 27, "B", last_tested_key == BTN_EAST);
+    draw_button_tile(face_x, cy + 34, 32, 27, "A", last_tested_key == BTN_SOUTH);
+
+    /* Analog sticks and their push buttons are shown even on models without
+     * physical sticks, so the same page documents the full H700 control set. */
+    draw_stick(left_stick_x, stick_y, "L3 / LEFT STICK",
+               last_tested_key == BTN_THUMBL ||
+               last_tested_key == TEST_AXIS_LX || last_tested_key == TEST_AXIS_LY);
+    draw_stick(right_stick_x, stick_y, "R3 / RIGHT STICK",
+               last_tested_key == BTN_THUMBR ||
+               last_tested_key == TEST_AXIS_RX || last_tested_key == TEST_AXIS_RY);
+
+    const char *name = last_tested_key < 0 ? "Waiting for input" :
+                       input_key_name(last_tested_key);
+    draw_line(28, 402, name, 13, colour(110, 230, 200), w - 56);
+    draw_footer("Hold MENU + START together to return to diagnostics");
 }
 
 static void render(void)
@@ -708,6 +775,15 @@ static int next_key(int timeout_ms)
         if (!(pfd[i].revents & POLLIN)) continue;
         struct input_event ev;
         while (read(inputs[i].fd, &ev, sizeof(ev)) == sizeof(ev)) {
+            if (ev.type == EV_ABS) {
+                switch (ev.code) {
+                case ABS_X: return TEST_AXIS_LX;
+                case ABS_Y: return TEST_AXIS_LY;
+                case ABS_RX: return TEST_AXIS_RX;
+                case ABS_RY: return TEST_AXIS_RY;
+                default: break;
+                }
+            }
             int key = baseos_map_input_event(&inputs[i].state,
                                              ev.type, ev.code, ev.value);
             if (key >= 0) return key;
