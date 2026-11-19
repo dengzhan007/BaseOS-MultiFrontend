@@ -57,7 +57,9 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
   baseos-alpine-cn:3.20 sh -euc '
   # Build tools remain outside the assembled rootfs. Native AArch64 binutils
   # can strip the vendor module without changing its loadable code or ABI.
-  apk add --no-cache binutils python3 >/dev/null
+  # Control-center Chinese UI uses a FreeType CJK fallback. Install the
+  # font only in this build container, then copy the single TTC into rootfs.
+  apk add --no-cache binutils python3 font-wqy-zenhei >/dev/null
   R=/tmp/rootfs
   rm -rf "$R"; mkdir -p "$R"
 
@@ -230,6 +232,11 @@ docker run --rm --platform "$BASEOS_DOCKER_PLATFORM_AARCH64" \
     mkdir -p "$R/usr/share/baseos"
     cp /assets/boot.ttf "$R/usr/share/baseos/boot.ttf"
     [ -f /assets/OFL.txt ] && cp /assets/OFL.txt "$R/usr/share/baseos/boot.ttf.OFL.txt"
+    cp /usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc "$R/usr/share/baseos/boot-cjk.ttc"
+    printf '%s\\n' 'WenQuanYi Zen Hei; Alpine package font-wqy-zenhei; license GPL-2.0-only.' \
+      'The license text and upstream source are available from the package project.' \
+      'https://github.com/deepin-community/fonts-wqy-zenhei' \
+      > "$R/usr/share/baseos/boot-cjk-font.NOTICE"
   fi
   # gptgrow: first-boot expand-to-fill of the FAT data partition.
   [ -f /tools/gptgrow ] && cp /tools/gptgrow "$R/usr/sbin/gptgrow" && chmod 755 "$R/usr/sbin/gptgrow"
