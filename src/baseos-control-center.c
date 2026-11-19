@@ -274,19 +274,20 @@ static unsigned int utf8_next(const unsigned char **cursor)
         *cursor = p + 1;
         return p[0];
     }
-    if ((p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
+    if (p[1] != 0 && (p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
         cp = ((unsigned int)(p[0] & 0x1f) << 6) | (p[1] & 0x3f);
         *cursor = p + 2;
         return cp;
     }
-    if ((p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 &&
-        (p[2] & 0xc0) == 0x80) {
+    if (p[1] != 0 && p[2] != 0 && (p[0] & 0xf0) == 0xe0 &&
+        (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
         cp = ((unsigned int)(p[0] & 0x0f) << 12) |
              ((unsigned int)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
         *cursor = p + 3;
         return cp;
     }
-    if ((p[0] & 0xf8) == 0xf0 && (p[1] & 0xc0) == 0x80 &&
+    if (p[1] != 0 && p[2] != 0 && p[3] != 0 &&
+        (p[0] & 0xf8) == 0xf0 && (p[1] & 0xc0) == 0x80 &&
         (p[2] & 0xc0) == 0x80 && (p[3] & 0xc0) == 0x80) {
         cp = ((unsigned int)(p[0] & 0x07) << 18) |
              ((unsigned int)(p[1] & 0x3f) << 12) |
