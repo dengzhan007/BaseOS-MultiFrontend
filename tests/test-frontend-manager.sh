@@ -254,4 +254,38 @@ run_manager delete-legacy-adapter nextui
 [ -f "$TF1/Games/game.rom" ] || fail "legacy frontend deletion removed shared Games"
 [ -f "$TF1/Saves/game.srm" ] || fail "legacy frontend deletion removed shared Saves"
 
+# On-device profile management uses the selected profile as a template.
+# Creating and renaming profiles must preserve the package launcher and the
+# original profile configuration while only changing BaseOS profile metadata.
+LIFECYCLE_PACKAGE=$TF1/Frontends/profile-lifecycle
+mkdir -p "$LIFECYCLE_PACKAGE/profiles"
+: > "$LIFECYCLE_PACKAGE/launch.sh"
+cat > "$LIFECYCLE_PACKAGE/baseos-frontend.conf" <<'EOF'
+package_api=1
+display_name=Profile lifecycle
+priority=100
+EOF
+cat > "$LIFECYCLE_PACKAGE/profiles/base.conf" <<'EOF'
+profile_api=1
+display_name=Base
+priority=100
+volume_owner=frontend
+power_owner=system
+EOF
+run_manager catalog
+run_manager create-profile profile-lifecycle--base arcade-mode "Arcade Mode"
+[ -f "$LIFECYCLE_PACKAGE/profiles/arcade-mode.conf" ] || fail "create-profile did not create a profile config"
+grep -F -q 'display_name=Arcade Mode' "$LIFECYCLE_PACKAGE/profiles/arcade-mode.conf" || fail "new profile display name was not saved"
+grep -F -q 'volume_owner=frontend' "$LIFECYCLE_PACKAGE/profiles/arcade-mode.conf" || fail "new profile did not inherit its template settings"
+run_manager catalog
+grep -F -q 'profile-lifecycle--arcade-mode|' "$CATALOG" || fail "new profile was not added to the catalog"
+run_manager rename-profile profile-lifecycle--arcade-mode "Arcade Cabinet"
+grep -F -q 'display_name=Arcade Cabinet' "$LIFECYCLE_PACKAGE/profiles/arcade-mode.conf" || fail "rename-profile did not update the display name"
+run_manager catalog
+grep -F -q 'profile-lifecycle--arcade-mode|Profile lifecycle / Arcade Cabinet|' "$CATALOG" || fail "renamed profile label was not refreshed in the catalog"
+run_manager uninstall profile-lifecycle--arcade-mode
+[ ! -e "$LIFECYCLE_PACKAGE/profiles/arcade-mode.conf" ] || fail "created profile could not be uninstalled"
+[ -f "$LIFECYCLE_PACKAGE/profiles/base.conf" ] || fail "uninstalling created profile removed the template profile"
+[ -f "$LIFECYCLE_PACKAGE/launch.sh" ] || fail "uninstalling a profile removed the shared frontend program"
+
 echo "PASS: frontend manager catalog, profile/full uninstall, legacy adapter selector lifecycle, data retention, package rename/default migration and symlink guard"
