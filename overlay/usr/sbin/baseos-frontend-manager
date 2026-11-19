@@ -400,7 +400,8 @@ valid_profile_display_name() {
   vpd_name=$1
   [ -n "$vpd_name" ] && [ "${#vpd_name}" -le 40 ] || return 1
   case "$vpd_name" in
-    *'|'*|*'/'*|*"$BASEOS_FRONTEND_CR"*) return 1 ;;
+    *'|'*|*'/'*|*"$BASEOS_FRONTEND_CR"*|*'
+'*) return 1 ;;
   esac
   case "$vpd_name" in
     " "*|*" ") return 1 ;;
@@ -429,6 +430,17 @@ profile_directory_for_entry() {
     echo "refusing symlinked .baseos directory" >&2
     return 1
   }
+  if [ "$ENTRY_KIND" = compat ]; then
+    [ ! -L "$ENTRY_ROOT/.baseos/compat" ] || {
+      echo "refusing symlinked compatibility directory" >&2
+      return 1
+    }
+  else
+    [ ! -L "$ENTRY_ROOT/Frontends" ] || {
+      echo "refusing symlinked Frontends directory" >&2
+      return 1
+    }
+  fi
   [ -d "$PROFILE_DIRECTORY" ] && [ ! -L "$PROFILE_DIRECTORY" ] || {
     echo "frontend profile package is missing or is a symlink" >&2
     return 1
