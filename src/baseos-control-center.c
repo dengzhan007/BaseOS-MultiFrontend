@@ -4,6 +4,7 @@
  * It does not launch or modify frontend binaries.
  */
 #define _DEFAULT_SOURCE
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -33,6 +34,10 @@
 #define SELECTION "/run/baseos-frontend-selection"
 #define MANAGER "/usr/sbin/baseos-frontend-manager"
 #define FONT "/usr/share/baseos/boot.ttf"
+#define TEST_AXIS_LX (KEY_MAX + 1)
+#define TEST_AXIS_LY (KEY_MAX + 2)
+#define TEST_AXIS_RX (KEY_MAX + 3)
+#define TEST_AXIS_RY (KEY_MAX + 4)
 
 typedef struct {
     char id[64], label[LABEL], package[64], profile[64];
@@ -59,6 +64,11 @@ static int confirm_mode;
 static int confirm_action;
 static int page_diagnostics;
 static int last_tested_key = -1;
+static char profile_source_id[64];
+static int text_entry_mode;
+static int text_entry_cursor;
+static int text_entry_caps;
+static char text_entry[48];
 /* RG34XX/H700 vendor button layout: L2/R2 report BTN_SELECT/BTN_START and
  * MENU reports BTN_TL2, so the on-screen names cannot follow the Linux names. */
 static int h700_keys = 1;
@@ -67,6 +77,7 @@ static char current_default_id[64] = "auto";
 static volatile sig_atomic_t running = 1;
 
 enum { CONFIRM_NONE, CONFIRM_PROFILE, CONFIRM_PACKAGE };
+enum { TEXT_ENTRY_NONE, TEXT_ENTRY_CREATE_PROFILE, TEXT_ENTRY_RENAME_PROFILE };
 
 static void stop_ui(int sig) { (void)sig; running = 0; }
 
