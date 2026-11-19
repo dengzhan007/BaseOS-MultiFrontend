@@ -382,37 +382,96 @@ static int entry_is_default(const Frontend *entry)
            strcmp(current_default_id, entry->id) == 0;
 }
 
+static int find_entry_by_id(const char *id)
+{
+    if (!id || !*id) return -1;
+    for (int i = 0; i < entry_count; ++i)
+        if (strcmp(entries[i].id, id) == 0) return i;
+    return -1;
+}
+
+static int selector_item_count(void)
+{
+    return entry_count + 3; /* create profile, rename profile, diagnostics */
+}
+
+static int source_entry_index(void)
+{
+    return find_entry_by_id(profile_source_id);
+}
+
+static int source_supports_profiles(void)
+{
+    int i = source_entry_index();
+    return i >= 0 &&
+           (strcmp(entries[i].kind, "managed") == 0 ||
+            strcmp(entries[i].kind, "compat") == 0);
+}
+
 static int load_catalog(void)
 {
+    char prior_selected[64] = "";
+    int old_entry_count = entry_count;
+    int prior_action = -1;
+    if (selected >= 0 && selected < old_entry_count)
+        snprintf(prior_selected, sizeof(prior_selected), "%s", entries[selected].id);
+    else if (selected >= old_entry_count)
+        prior_action = selected - old_entry_count;
+
     load_current_default();
     FILE *fp = fopen(CATALOG, "r");
     char line[1800];
     entry_count = 0;
-    if (!fp) return 0;
-    while (entry_count < MAX_ENTRIES && fgets(line, sizeof(line), fp)) {
-        char *fields[10] = {0}, *save = NULL, *p;
-        int n = 0;
-        line[strcspn(line, "\r\n")] = 0;
-        p = strtok_r(line, "|", &save);
-        while (p && n < 10) { fields[n++] = p; p = strtok_r(NULL, "|", &save); }
-        if (n != 10) continue;
-        Frontend *e = &entries[entry_count];
-        read_field(fields,n,0,e->id,sizeof(e->id));
-        read_field(fields,n,1,e->label,sizeof(e->label));
-        read_field(fields,n,2,e->package,sizeof(e->package));
-        read_field(fields,n,3,e->profile,sizeof(e->profile));
-        read_field(fields,n,4,e->root,sizeof(e->root));
-        read_field(fields,n,5,e->package_dir,sizeof(e->package_dir));
-        read_field(fields,n,6,e->profile_config,sizeof(e->profile_config));
-        read_field(fields,n,8,e->kind,sizeof(e->kind));
-        read_field(fields,n,9,e->status,sizeof(e->status));
-        e->priority = atoi(fields[7]);
-        if (!e->id[0] || !e->label[0]) continue;
-        ++entry_count;
+    if (fp) {
+        while (entry_count < MAX_ENTRIES && fgets(line, sizeof(line), fp)) {
+            char *fields[10] = {0}, *save = NULL, *p;
+            int n = 0;
+            line[strcspn(line, "\r\n")] = 0;
+            p = strtok_r(line, "|", &save);
+            while (p && n < 10) { fields[n++] = p; p = strtok_r(NULL, "|", &save); }
+            if (n != 10) continue;
+            Frontend *e = &entries[entry_count];
+            read_field(fields,n,0,e->id,sizeof(e->id));
+            read_field(fields,n,1,e->label,sizeof(e->label));
+            read_field(fields,n,2,e->package,sizeof(e->package));
+            read_field(fields,n,3,e->profile,sizeof(e->profile));
+            read_field(fields,n,4,e->root,sizeof(e->root));
+            read_field(fields,n,5,e->package_dir,sizeof(e->package_dir));
+            read_field(fields,n,6,e->profile_config,sizeof(e->profile_config));
+            read_field(fields,n,8,e->kind,sizeof(e->kind));
+            read_field(fields,n,9,e->status,sizeof(e->status));
+            e->priority = atoi(fields[7]);
+            if (!e->id[0] || !e->label[0]) continue;
+            ++entry_count;
+        }
+        fclose(fp);
     }
-    fclose(fp);
-    if (selected > entry_count) selected = entry_count;
+
+    /* Stable partition: enabled entries remain in discovery order, followed
+     * by disabled entries. Disabled frontends remain manageable but cannot
+     * crowd active choices at the top of the selector. */
+    Frontend ordered[MAX_ENTRIES];
+    int out = 0;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int i = 0; i < entry_count; ++i) {
+            int disabled = strcmp(entries[i].status, "disabled") == 0;
+            if (disabled == pass) ordered[out++] = entries[i];
+        }
+    }
+    if (out == entry_count)
+        memcpy(entries, ordered, (size_t)entry_count * sizeof(entries[0]));
+
+    int old_selected_index = find_entry_by_id(prior_selected);
+    if (old_selected_index >= 0) selected = old_selected_index;
+    else if (prior_action >= 0) selected = entry_count + prior_action;
+    else if (selected < 0) selected = 0;
+    if (selected >= selector_item_count()) selected = selector_item_count() - 1;
     if (selected < 0) selected = 0;
+
+    if (!profile_source_id[0] && entry_count > 0)
+        snprintf(profile_source_id, sizeof(profile_source_id), "%s", entries[0].id);
+    if (source_entry_index() < 0 && entry_count > 0)
+        snprintf(profile_source_id, sizeof(profile_source_id), "%s", entries[0].id);
     return entry_count;
 }
 
