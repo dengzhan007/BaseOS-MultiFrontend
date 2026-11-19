@@ -195,27 +195,18 @@ EOF
   echo "ok"
 
   echo "== a payload for another target is refused =="
-  set -x
-  reset
-  make_payload rg35xxh "$SLOT_SECTORS" clean
-  set +x
-  echo "MARK: before apply"
+  reset; make_payload rg35xxh "$SLOT_SECTORS" clean
   if baseos-update apply; then echo "FAIL: wrong target accepted" >&2; exit 1; fi
-  echo "MARK: after apply"
   no_flip "wrong target"
-  echo "MARK: after no_flip"
   test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd \
     || { echo "FAIL: rejected package still on card" >&2; exit 1; }
-  echo "MARK: after test1"
   test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed \
     || { echo "FAIL: rejected package not quarantined" >&2; exit 1; }
-  echo "MARK: after test2"
   reason_line="$(grep '^reason=' /data/update/last-failure 2>/dev/null || true)"
   case "$reason_line" in
     *"built for rg35xxh"*) ;;
     *) echo "FAIL: rejection reason missing: [$reason_line]" >&2; exit 1 ;;
   esac
-  echo "MARK: after test3"
   echo "ok: rejected package quarantined with its reason"
 
   echo "== a payload for a different slot size is refused =="
@@ -231,7 +222,11 @@ EOF
   test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
   test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed
   grep -q "UPDATE FAILED" /tmp/splash.log || { echo "FAIL: no failure pill" >&2; exit 1; }
-  grep -q 'reason=read-back SHA-256 mismatch' /data/update/last-failure
+  reason_line="$(grep '^reason=' /data/update/last-failure 2>/dev/null || true)"
+  case "$reason_line" in
+    *"read-back SHA-256 mismatch"*) ;;
+    *) echo "FAIL: read-back reason missing: [$reason_line]" >&2; exit 1 ;;
+  esac
   echo "ok: corrupted package quarantined; active slot never committed"
 
   echo "== a card with no A/B layout is left alone =="
@@ -250,7 +245,11 @@ EOF
   no_flip "failed commit"
   test ! -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd
   test -f /mnt/sdcard/baseos-rg40xxv-1.0.1.bosupd.failed
-  grep -q 'reason=image was written and verified, but GPT slot switch failed' /data/update/last-failure
+  reason_line="$(grep '^reason=' /data/update/last-failure 2>/dev/null || true)"
+  case "$reason_line" in
+    *"GPT slot switch failed"*) ;;
+    *) echo "FAIL: slot-flip reason missing: [$reason_line]" >&2; exit 1 ;;
+  esac
   test ! -f /tmp/reboot.log
   echo "ok"
 
