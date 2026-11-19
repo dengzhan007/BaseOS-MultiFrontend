@@ -23,10 +23,13 @@ int main(void)
     assert(baseos_is_start_key(BTN_TR));
     assert(baseos_is_start_key(BTN_START));
 
-    assert(baseos_button_test_exit_chord(1, 1));
-    assert(!baseos_button_test_exit_chord(1, 0));
-    assert(!baseos_button_test_exit_chord(0, 1));
-    assert(!baseos_button_test_exit_chord(0, 0));
+    /* The button test needs a chord that users can actually press: SELECT +
+     * START, not the old MENU + START. The caller resolves either code of a
+     * pair, so the helper only sees two already-resolved flags. */
+    assert(baseos_is_button_test_exit_chord(1, 1));
+    assert(!baseos_is_button_test_exit_chord(1, 0));
+    assert(!baseos_is_button_test_exit_chord(0, 1));
+    assert(!baseos_is_button_test_exit_chord(0, 0));
     assert(!baseos_is_start_key(BTN_TL));
     assert(!baseos_is_start_key(BTN_SELECT));
 

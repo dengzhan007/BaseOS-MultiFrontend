@@ -25,9 +25,12 @@ static inline int baseos_is_select_key(int code)
     return code == BTN_TL || code == BTN_SELECT;
 }
 
-static inline int baseos_button_test_exit_chord(int menu_down, int start_down)
+/* The button test consumes both face buttons, so it needs a deliberate chord
+ * to leave. SELECT + START is the pair every H700 model has in the same place;
+ * MENU + START was the old chord and users could not press it reliably. */
+static inline int baseos_is_button_test_exit_chord(int select_down, int start_down)
 {
-    return menu_down && start_down;
+    return select_down && start_down;
 }
 
 static inline int baseos_is_start_key(int code)

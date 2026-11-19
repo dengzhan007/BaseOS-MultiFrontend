@@ -637,7 +637,7 @@ static const UiTranslation ui_translations[] = {
     {"[COMPAT]", "[兼容]"},
     {"[LEGACY]", "[旧式]"},
     {"No compatible frontend found. Copy one into Frontends/.", "未发现兼容前端，请将前端放入 Frontends/。"},
-    {"A Open/Launch   START Default   SELECT Enable/disable   L1 Remove profile   Y Delete frontend", "A 打开/启动  START 设为默认  SELECT 启用/禁用  L1 删除配置  Y 删除前端"},
+    {"A Open/Launch   START Default   SELECT Enable/disable   L1 Remove profile   X Delete frontend", "A 打开/启动  START 设为默认  SELECT 启用/禁用  L1 删除配置  X 删除前端"},
     {"Confirm removal", "确认删除"},
     {"This cannot be undone", "此操作无法撤销"},
     {"Remove this configuration profile?", "确定删除此配置？"},
@@ -684,13 +684,13 @@ static const UiTranslation ui_translations[] = {
     {"Left stick Y axis", "左摇杆 Y 轴"},
     {"Right stick X axis", "右摇杆 X 轴"},
     {"Right stick Y axis", "右摇杆 Y 轴"},
-    {"Hold MENU + START together to return to diagnostics", "同时按住 MENU + START 返回诊断页面"},
+    {"Hold SELECT + START together to return to diagnostics", "同时按住 SELECT + START 返回诊断页面"},
     {"Create frontend profile", "新建前端配置"},
     {"Rename frontend profile", "重命名前端配置"},
     {"On-device keyboard", "设备键盘"},
     {"Profile name", "配置名称"},
-    {"D-pad Move   A Select   B Backspace   START Save   CANCEL Exit", "十字键移动  A 输入  B 退格  START 保存  CANCEL 取消"},
-    {"Press buttons and move sticks; MENU+START exits", "按键或移动摇杆；同时按 MENU+START 退出"},
+    {"D-pad Move   A Select   B Backspace   START Save   MENU Exit", "十字键移动  A 输入  B 退格  START 保存  MENU 退出"},
+    {"Press buttons and move sticks; SELECT + START exits", "按键或移动摇杆；同时按 SELECT + START 退出"},
     {"A Open button test   B Frontend selector   START Refresh", "A 打开按键测试  B 返回前端选择  START 刷新"},
     {"A Open/Launch", "A 打开/启动"},
     {"Cancelled", "已取消"},
@@ -823,10 +823,10 @@ static void draw_header(const char *title, const char *subtitle)
     fill_rect(0, 0, w, h, colour(9, 15, 24));
     fill_rect(0, 0, w, 70, colour(18, 35, 52));
     fill_rect(0, 69, w, 2, colour(41, 190, 165));
-    draw_text(28, 37, "BASEOS / RG34XX", 23, colour(78, 220, 193));
-    draw_text(28, 59, title, 19, colour(245, 248, 252));
+    draw_text(28, 37, "BASEOS / RG34XX", 24, colour(78, 220, 193));
+    draw_text(28, 61, title, 21, colour(245, 248, 252));
     if (page_diagnostics == 1)
-        draw_text(w - 142, 61, ui_chinese ? "L1 English" : "L1 中文", 11,
+        draw_text(w - 148, 62, ui_chinese ? "L1 English" : "L1 中文", 13,
                   colour(173,190,205));
     /* Right-aligned status line. It used to start at a fixed x with a fixed
      * width, which clipped long package ids mid-glyph; measure first so the
@@ -842,79 +842,118 @@ static void draw_footer(const char *text)
 {
     int h = (int)fb_var.yres, w = (int)fb_var.xres;
     fill_rect(0, h - 58, w, 58, colour(18, 35, 52));
-    draw_line(24, h - 37, status_text, 12, colour(123, 192, 180), w - 48);
-    draw_line(24, h - 15, text, 12, colour(203, 215, 224), w - 48);
+    draw_line(24, h - 36, status_text, 14, colour(123, 192, 180), w - 48);
+    draw_line(24, h - 13, text, 14, colour(203, 215, 224), w - 48);
+}
+
+static void draw_badge(int right_x, int y, const char *text, int px,
+                       uint32_t bg, uint32_t fg)
+{
+    int tw = text_width(text, px);
+    int bw = tw + 16, bh = px + 9;
+    int x = right_x - bw;
+    fill_rect(x, y, bw, bh, bg);
+    draw_text(x + 8, y + bh - 7, text, px, fg);
 }
 
 static void render_selector(void)
 {
     int w = (int)fb_var.xres;
-    int row_h = 38;
+    int row_h = 48;
     int total = selector_item_count();
-    char default_label[96];
-    snprintf(default_label, sizeof(default_label), ui_chinese ? "默认启动：%s" : "Default: %s", current_default_id);
-    draw_header("Frontend selector", default_label);
-    draw_text(28, 101, "Installed frontend profiles", 16, colour(157, 177, 194));
+    /* The default is shown on the row it belongs to, not in the header: a
+     * title far from the list reads like a status of the whole page. */
+    draw_header("Frontend selector", "");
+    draw_text(28, 106, "Installed frontend profiles", 17, colour(157, 177, 194));
     char count[80];
     snprintf(count, sizeof(count), ui_chinese ? "%d 个配置" : "%d profile(s)", entry_count);
-    draw_text(w - 150, 101, count, 13, colour(157, 177, 194));
+    int count_w = text_width(count, 14);
+    draw_text(w - 30 - count_w, 106, count, 14, colour(157, 177, 194));
 
-    int visible = ((int)fb_var.yres - 150) / row_h;
-    if (visible < 3) visible = 3;
-    if (visible > 8) visible = 8;
+    int visible = ((int)fb_var.yres - 148) / row_h;
+    if (visible < 2) visible = 2;
+    if (visible > 6) visible = 6;
     if (selected < offset) offset = selected;
     if (selected >= offset + visible) offset = selected - visible + 1;
     if (offset > total - visible) offset = total - visible;
     if (offset < 0) offset = 0;
 
     for (int i = 0; i < visible && offset + i < total; ++i) {
-        int index = offset + i, y = 112 + i * row_h;
+        int index = offset + i, y = 114 + i * row_h;
         int is_selected = index == selected;
-        fill_rect(20, y, w - 40, 34,
+        fill_rect(20, y, w - 40, 44,
                   is_selected ? colour(31, 69, 78) : colour(17, 27, 39));
-        if (is_selected) fill_rect(20, y, 5, 34, colour(63, 220, 183));
+        if (is_selected) fill_rect(20, y, 5, 44, colour(63, 220, 183));
         if (index < entry_count) {
             Frontend *e = &entries[index];
-            char meta[220];
-            snprintf(meta, sizeof(meta), "%s / %s", e->package, e->profile);
-            draw_line(38, y + 17, e->label, 15,
-                      strcmp(e->status,"disabled")==0 ? colour(145,155,165) :
-                      is_selected ? colour(255,255,255) : colour(216,226,235), w - 260);
-            draw_line(38, y + 30, meta, 10, colour(145, 165, 180), w - 250);
-            const char *tag = strcmp(e->status,"disabled")==0 ? "[DISABLED]" :
-                              entry_is_default(e) ? "[DEFAULT]" :
-                              (strcmp(e->kind,"managed")==0 ? "[MANAGED]" :
-                               strcmp(e->kind,"compat")==0 ? "[COMPAT]" : "[LEGACY]");
-            draw_text(w - 158, y + 23, tag, 10,
-                      strcmp(e->status,"disabled")==0 ? colour(236,164,108) :
-                      entry_is_default(e) ? colour(243,194,104) : colour(104,195,173));
+            int disabled = strcmp(e->status, "disabled") == 0;
+            const char *kind = strcmp(e->kind, "managed") == 0 ?
+                               (ui_chinese ? "BaseOS 托管" : "BaseOS managed") :
+                               strcmp(e->kind, "compat") == 0 ?
+                               (ui_chinese ? "兼容运行" : "compat runtime") :
+                               strcmp(e->kind, "legacy-adapter") == 0 ?
+                               (ui_chinese ? "旧版适配" : "legacy adapter") :
+                               (ui_chinese ? "原生程序" : "native program");
+            char meta[240];
+            snprintf(meta, sizeof(meta), "%s · %s / %s", kind, e->package, e->profile);
+            draw_line(38, y + 21, e->label, 19,
+                      disabled ? colour(145, 155, 165) :
+                      is_selected ? colour(255, 255, 255) : colour(216, 226, 235),
+                      w - 210);
+            draw_line(38, y + 39, meta, 13, colour(145, 165, 180), w - 210);
+            if (entry_is_default(e)) {
+                draw_badge(w - 30, y + 13, ui_chinese ? "默认" : "DEFAULT", 14,
+                           colour(243, 194, 104), colour(28, 32, 38));
+            } else if (disabled) {
+                draw_badge(w - 30, y + 13, ui_chinese ? "已禁用" : "DISABLED", 13,
+                           colour(96, 68, 46), colour(238, 190, 140));
+            }
         } else {
             int action = index - entry_count;
-            const char *label = action == 0 ? "Create profile..." :
-                                action == 1 ? "Rename selected profile..." :
-                                action == 2 ? "BaseOS diagnostics" :
+            int src = source_entry_index();
+            const char *src_label = src >= 0 ? entries[src].label : NULL;
+            const char *label = action == 0 ?
+                                (ui_chinese ? "新建配置…" : "Create profile...") :
+                                action == 1 ?
+                                (ui_chinese ? "重命名配置…" : "Rename selected profile...") :
+                                action == 2 ?
+                                (ui_chinese ? "BaseOS 诊断" : "BaseOS diagnostics") :
                                 (ui_chinese ? "语言：中文（按 A 切换 English）" :
                                               "Language: English (press A for 中文)");
-            const char *detail = action == 0 ?
-                (source_supports_profiles() ? "Create another independent configuration from the selected profile" :
-                                               "Select a managed or compatible profile first") :
-                action == 1 ?
-                (source_supports_profiles() ? "Change the selected profile's display name" :
-                                               "Select a managed or compatible profile first") :
-                action == 2 ? "System, storage, battery and physical button tests" :
-                (ui_chinese ? "切换诊断页和前端选择的显示语言" :
-                              "Change the language on selector and diagnostics pages");
-            draw_text(38, y + 16, label, 15,
-                      is_selected ? colour(255,255,255) :
-                      action >= 2 ? colour(192,208,220) : colour(123,220,194));
-            draw_line(38, y + 29, detail, 10, colour(145,165,180), w - 75);
+            char detail[220];
+            if (action <= 1) {
+                if (src_label && source_supports_profiles())
+                    snprintf(detail, sizeof(detail),
+                             ui_chinese ? "来源：%s（左右键切换）" :
+                                          "From: %s (left/right changes it)", src_label);
+                else
+                    snprintf(detail, sizeof(detail),
+                             ui_chinese ? "先把光标停在托管或兼容配置上再操作" :
+                                          "Select a managed or compatible profile first");
+            } else if (action == 2) {
+                snprintf(detail, sizeof(detail),
+                         ui_chinese ? "系统、存储、电池与实体按键测试" :
+                                      "System, storage, battery and button tests");
+            } else {
+                snprintf(detail, sizeof(detail),
+                         ui_chinese ? "切换诊断页和前端选择的显示语言" :
+                                      "Change the language of selector and diagnostics");
+            }
+            draw_text(38, y + 20, label, 19,
+                      is_selected ? colour(255, 255, 255) :
+                      action >= 2 ? colour(192, 208, 220) : colour(123, 220, 194));
+            draw_line(38, y + 38, detail, 13, colour(145, 165, 180), w - 75);
         }
     }
     if (entry_count == 0) {
-        draw_text(30, 426 - 20, "No compatible frontend found. Copy one into Frontends/.",
-                  12, colour(240,190,112));
+        draw_text(30, 400, ui_chinese ?
+                  "没有找到兼容的前端，请把前端放进 Frontends/" :
+                  "No compatible frontend found. Copy one into Frontends/.",
+                  15, colour(240, 190, 112));
     }
-    draw_footer("A Open/Launch   START Default   SELECT Enable/disable   L1 Remove profile   Y Delete frontend");
+    draw_footer(ui_chinese ?
+        "A 启动  START 设为默认  SELECT 启用/禁用  L1 删除配置  X 删除前端" :
+        "A Launch  START Default  SELECT Enable/disable  L1 Remove profile  X Delete frontend");
 }
 
 static void render_confirm(void)
@@ -945,15 +984,15 @@ static void render_diagnostics(void)
     int w = (int)fb_var.xres;
     char line[160];
     draw_header("System diagnostics", "BaseOS / RG34XX");
-    draw_text(28, 108, "Device", 14, colour(123,192,180));
-    draw_text(190, 108, "Anbernic RG34XX / Allwinner H700", 15, colour(236,242,247));
+    draw_text(28, 104, "Device", 16, colour(123,192,180));
+    draw_line(200, 104, "Anbernic RG34XX / Allwinner H700", 17, colour(236,242,247), w - 230);
     if (uname(&u) == 0) {
-        draw_text(28, 143, "Kernel", 14, colour(123,192,180));
-        draw_line(190, 143, u.release, 14, colour(236,242,247), w - 215);
+        draw_text(28, 140, "Kernel", 16, colour(123,192,180));
+        draw_line(200, 140, u.release, 16, colour(236,242,247), w - 230);
     }
-    draw_text(28, 178, "Frontend catalog", 14, colour(123,192,180));
-    snprintf(line, sizeof(line), ui_chinese ? "%d 个兼容配置" : "%d compatible profile(s)", entry_count);
-    draw_text(190, 178, line, 14, colour(236,242,247));
+    draw_text(28, 176, ui_chinese ? "前端配置" : "Frontend catalog", 16, colour(123,192,180));
+    snprintf(line, sizeof(line), ui_chinese ? "%d 个可用配置" : "%d available profile(s)", entry_count);
+    draw_text(200, 176, line, 16, colour(236,242,247));
 
     int mounted = 0;
     FILE *fp = fopen("/proc/mounts", "r");
@@ -963,42 +1002,46 @@ static void render_diagnostics(void)
             if (strstr(row, " /mnt/sdcard ")) { mounted = 1; break; }
         fclose(fp);
     }
-    draw_text(28, 213, "Storage", 14, colour(123,192,180));
-    draw_text(190, 213, mounted ? "/mnt/sdcard mounted" : "No user-data card mounted",
-              14, colour(236,242,247));
+    draw_text(28, 212, ui_chinese ? "存储卡" : "Storage", 16, colour(123,192,180));
+    draw_text(200, 212, mounted ? (ui_chinese ? "已挂载，可读写" : "/mnt/sdcard mounted") :
+              (ui_chinese ? "未检测到存储卡" : "No user-data card mounted"),
+              16, colour(236,242,247));
 
     fp = fopen("/sys/class/power_supply/axp2202-battery/capacity", "r");
-    char battery[32] = "unknown";
+    char battery[32] = "?";
     if (fp) {
         if (fgets(battery, sizeof(battery), fp)) battery[strcspn(battery, "\r\n")] = 0;
         fclose(fp);
     }
-    draw_text(28, 248, "Battery", 14, colour(123,192,180));
+    draw_text(28, 248, ui_chinese ? "电量" : "Battery", 16, colour(123,192,180));
     snprintf(line, sizeof(line), "%s%%", battery);
-    draw_text(190, 248, line, 14, colour(236,242,247));
-    draw_text(28, 283, "USB Mass Storage", 14, colour(123,192,180));
-    draw_line(190, 283, ui_chinese ?
-              "选择下方入口，重启后进入 USB 存储模式" :
-              "Select below; device restarts into USB storage mode",
-              13, colour(236,242,247), w - 215);
-    draw_text(28, 318, "Boot log", 14, colour(123,192,180));
-    draw_line(190, 318, "/mnt/sdcard/baseos-boot.log", 14,
-              colour(236,242,247), w - 215);
+    draw_text(200, 248, line, 16, colour(236,242,247));
+    draw_text(28, 284, ui_chinese ? "启动日志" : "Boot log", 16, colour(123,192,180));
+    draw_line(200, 284, "/mnt/sdcard/baseos-boot.log", 16,
+              colour(236,242,247), w - 230);
 
-    const char *actions[2] = {"BUTTON TEST", "USB STORAGE MODE"};
+    draw_line(28, 316, ui_chinese ?
+              "USB 存储：先接数据线，传完后可直接拔线" :
+              "USB storage: connect the cable, unplug when transfers finish",
+              14, colour(157,177,194), w - 56);
+
+    const char *actions[2] = {
+        ui_chinese ? "按键测试" : "BUTTON TEST",
+        ui_chinese ? "USB 存储模式" : "USB STORAGE MODE"
+    };
     const char *details[2] = {
         ui_chinese ? "测试实体按键、扳机和左右摇杆" : "Test buttons, triggers and both analog sticks",
-        ui_chinese ? "先接数据线；完成传输后可直接拔线" :
-                     "Connect cable first; unplug after transfers finish"
+        ui_chinese ? "重启后电脑上会出现这个卡" :
+                     "The card appears on the computer after a restart"
     };
     for (int i = 0; i < 2; ++i) {
-        int y = 342 + i * 39;
+        int y = 334 + i * 42;
         int active = diagnostics_selection == i;
-        fill_rect(22, y, w - 44, 35,
+        fill_rect(22, y, w - 44, 38,
                   active ? colour(24,77,77) : colour(17,27,39));
-        if (active) fill_rect(22, y, 6, 35, colour(54,220,185));
-        draw_text(42, y + 15, actions[i], 15, colour(255,255,255));
-        draw_line(230, y + 23, details[i], 11, colour(195,215,225), w - 260);
+        if (active) fill_rect(22, y, 6, 38, colour(54,220,185));
+        draw_text(42, y + 17, actions[i], 17, colour(255,255,255));
+        draw_line(250, y + 24, details[i], 12, colour(195,215,225), w - 280);
     }
     draw_footer(ui_chinese ?
         "上下选择  A 确认  B 返回前端选择  L1 切换 English  START 刷新" :
@@ -1019,8 +1062,11 @@ static const char *input_key_name(int key)
         case BTN_TR2: return "Extra trigger";
         case BTN_SOUTH: return "A";
         case BTN_EAST: return "B";
-        case BTN_C: return "X";
-        case BTN_NORTH: return "Y";
+        /* The vendor DT wires the printed X to BTN_NORTH and the printed Y to
+         * BTN_C, the opposite of the usual naming. Report what the shell says,
+         * or the prompts send the user to the wrong button. */
+        case BTN_NORTH: return "X";
+        case BTN_C: return "Y";
         case BTN_MODE: return "Mode";
         case BTN_THUMBL: return "L3 / Left stick click";
         case BTN_THUMBR: return "R3 / Right stick click";
@@ -1077,18 +1123,18 @@ static void draw_button_tile(int cx, int cy, int width, int height,
     uint32_t bg = active ? colour(35, 174, 150) : colour(38, 54, 70);
     uint32_t fg = active ? colour(255, 255, 255) : colour(195, 210, 222);
     fill_rect(cx - width / 2, cy - height / 2, width, height, bg);
-    int tw = text_width(label, 12);
-    draw_text(cx - tw / 2, cy + 4, label, 12, fg);
+    int tw = text_width(label, 13);
+    draw_text(cx - tw / 2, cy + 5, label, 13, fg);
 }
 
 static void draw_stick(int cx, int cy, const char *label, int active)
 {
     uint32_t rim = active ? colour(50, 220, 180) : colour(91, 112, 130);
-    draw_disc(cx, cy, 27, rim);
-    draw_disc(cx, cy, 21, colour(20, 32, 46));
-    draw_disc(cx, cy, 8, active ? colour(50, 220, 180) : colour(125, 145, 160));
-    int tw = text_width(label, 12);
-    draw_text(cx - tw / 2, cy + 48, label, 12,
+    draw_disc(cx, cy, 30, rim);
+    draw_disc(cx, cy, 23, colour(20, 32, 46));
+    draw_disc(cx, cy, 9, active ? colour(50, 220, 180) : colour(125, 145, 160));
+    int tw = text_width(label, 13);
+    draw_text(cx - tw / 2, cy + 52, label, 13,
               active ? colour(110, 245, 212) : colour(195, 210, 222));
 }
 
@@ -1297,21 +1343,24 @@ static void render_text_entry(void)
     draw_header(text_entry_mode == TEXT_ENTRY_CREATE_PROFILE ?
                 "Create frontend profile" : "Rename frontend profile",
                 "On-device keyboard");
-    draw_text(28, 112, "Profile name", 14, colour(123,192,180));
-    fill_rect(24, 126, w - 48, 42, colour(23, 39, 54));
-    draw_line(38, 153, text_entry, 19, colour(255,255,255), w - 76);
+    draw_text(28, 110, ui_chinese ? "配置名称" : "Profile name", 16,
+              colour(123,192,180));
+    fill_rect(24, 124, w - 48, 44, colour(23, 39, 54));
+    draw_line(38, 153, text_entry, 22, colour(255,255,255), w - 76);
     int cell_w = (w - 60) / 10;
     for (int i = 0; i < 46; ++i) {
         int row = i / 10;
         int col = i % 10;
         int cx = 30 + col * cell_w + cell_w / 2;
-        int cy = 204 + row * 42;
+        int cy = 208 + row * 42;
         int width = cell_w - 4;
         if (row == 4 && col >= 4) width = cell_w - 4;
-        draw_button_tile(cx, cy, width, 31, text_keyboard_keys[i],
+        draw_button_tile(cx, cy, width, 32, text_keyboard_keys[i],
                          i == text_entry_cursor);
     }
-    draw_footer("D-pad Move   A Select   B Backspace   START Save   CANCEL Exit");
+    draw_footer(ui_chinese ?
+        "方向键 移动  A 输入  B 退格  START 保存  MENU 退出" :
+        "D-pad Move  A Select  B Backspace  START Save  MENU Exit");
 }
 
 static void render_button_test(void)
@@ -1322,38 +1371,45 @@ static void render_button_test(void)
     int face_x = w * 78 / 100;
     int left_stick_x = w * 40 / 100;
     int right_stick_x = w * 60 / 100;
-    int cy = 258;
-    int stick_y = 337;
-    draw_header("Button test", "Handheld control map");
-    draw_text(28, 99, "Press each control; the matching key lights up.", 14,
+    int cy = 250;
+    int stick_y = 345;
+    const char *name = last_tested_key < 0 ?
+                       (ui_chinese ? "等待按键" : "Waiting for input") :
+                       input_key_name(last_tested_key);
+    /* The last key belongs in the header: the bottom of the page is already
+     * taken by the stick labels and the footer. */
+    draw_header("Button test", name);
+    draw_text(28, 100, ui_chinese ?
+              "逐个按下按键，对应的格子会亮起" :
+              "Press each control; the matching key lights up.", 16,
               colour(225,235,243));
 
     /* Shoulder controls and the device-specific H700 labels. */
-    draw_button_tile(w * 15 / 100, 137, 68, 27, "L2", last_tested_key == BTN_SELECT);
-    draw_button_tile(w * 30 / 100, 137, 68, 27, "L1", last_tested_key == BTN_WEST);
-    draw_button_tile(w * 70 / 100, 137, 68, 27, "R1", last_tested_key == BTN_Z);
-    draw_button_tile(w * 85 / 100, 137, 68, 27, "R2", last_tested_key == BTN_START);
+    draw_button_tile(w * 15 / 100, 140, 76, 30, "L2", last_tested_key == BTN_SELECT);
+    draw_button_tile(w * 30 / 100, 140, 76, 30, "L1", last_tested_key == BTN_WEST);
+    draw_button_tile(w * 70 / 100, 140, 76, 30, "R1", last_tested_key == BTN_Z);
+    draw_button_tile(w * 85 / 100, 140, 76, 30, "R2", last_tested_key == BTN_START);
 
     /* Select / Menu / Start cluster. */
-    draw_button_tile(cx - 76, 183, 62, 25, "SELECT", last_tested_key == BTN_TL);
-    draw_button_tile(cx, 183, 62, 25, "MENU", last_tested_key == BTN_TL2);
-    draw_button_tile(cx + 76, 183, 62, 25, "START", last_tested_key == BTN_TR);
+    draw_button_tile(cx - 78, 186, 70, 28, "SELECT", last_tested_key == BTN_TL);
+    draw_button_tile(cx, 186, 70, 28, "MENU", last_tested_key == BTN_TL2);
+    draw_button_tile(cx + 78, 186, 70, 28, "START", last_tested_key == BTN_TR);
 
     /* Four-way D-pad. */
-    draw_button_tile(dpad_x, cy - 30, 36, 27, "UP",
+    draw_button_tile(dpad_x, cy - 32, 42, 30, "UP",
                      last_tested_key == KEY_UP);
-    draw_button_tile(dpad_x, cy + 30, 36, 27, "DOWN",
+    draw_button_tile(dpad_x, cy + 32, 42, 30, "DOWN",
                      last_tested_key == KEY_DOWN);
-    draw_button_tile(dpad_x - 34, cy, 36, 27, "LEFT",
+    draw_button_tile(dpad_x - 40, cy, 42, 30, "LEFT",
                      last_tested_key == KEY_LEFT);
-    draw_button_tile(dpad_x + 34, cy, 36, 27, "RIGHT",
+    draw_button_tile(dpad_x + 40, cy, 42, 30, "RIGHT",
                      last_tested_key == KEY_RIGHT);
 
-    /* Face buttons. */
-    draw_button_tile(face_x, cy - 34, 32, 27, "Y", last_tested_key == BTN_NORTH);
-    draw_button_tile(face_x - 36, cy, 32, 27, "X", last_tested_key == BTN_C);
-    draw_button_tile(face_x + 36, cy, 32, 27, "B", last_tested_key == BTN_EAST);
-    draw_button_tile(face_x, cy + 34, 32, 27, "A", last_tested_key == BTN_SOUTH);
+    /* Face buttons, labelled with the printed names. */
+    draw_button_tile(face_x, cy - 36, 42, 30, "Y", last_tested_key == BTN_C);
+    draw_button_tile(face_x - 42, cy, 42, 30, "X", last_tested_key == BTN_NORTH);
+    draw_button_tile(face_x + 42, cy, 42, 30, "B", last_tested_key == BTN_EAST);
+    draw_button_tile(face_x, cy + 36, 42, 30, "A", last_tested_key == BTN_SOUTH);
 
     /* Analog sticks and their push buttons are shown even on models without
      * physical sticks, so the same page documents the full H700 control set. */
@@ -1364,10 +1420,9 @@ static void render_button_test(void)
                last_tested_key == BTN_THUMBR ||
                last_tested_key == TEST_AXIS_RX || last_tested_key == TEST_AXIS_RY);
 
-    const char *name = last_tested_key < 0 ? "Waiting for input" :
-                       input_key_name(last_tested_key);
-    draw_line(28, 402, name, 13, colour(110, 230, 200), w - 56);
-    draw_footer("Hold MENU + START together to return to diagnostics");
+    draw_footer(ui_chinese ?
+        "同时按住 SELECT + START 返回诊断页" :
+        "Hold SELECT + START together to return to diagnostics");
 }
 
 static void render_text_entry(void);
@@ -1430,6 +1485,31 @@ static void remember_profile_source(int index)
         snprintf(profile_source_id, sizeof(profile_source_id), "%s", entries[index].id);
 }
 
+/* Create/Rename act on one frontend, and picking that frontend must not depend
+ * on where the cursor happened to rest last. The row shows the current source
+ * and the left/right keys walk it, so the choice is visible and deliberate. */
+static int profile_source_usable(const Frontend *entry)
+{
+    return strcmp(entry->status, "disabled") != 0 &&
+           (strcmp(entry->kind, "managed") == 0 ||
+            strcmp(entry->kind, "compat") == 0);
+}
+
+static void cycle_profile_source(int direction)
+{
+    if (entry_count <= 0) return;
+    int start = source_entry_index();
+    if (start < 0) start = 0;
+    for (int step = 1; step <= entry_count; ++step) {
+        int index = (start + direction * step) % entry_count;
+        if (index < 0) index += entry_count;
+        if (profile_source_usable(&entries[index])) {
+            remember_profile_source(index);
+            return;
+        }
+    }
+}
+
 static void handle_selector_key(int key)
 {
     if (confirm_mode) {
@@ -1454,13 +1534,20 @@ static void handle_selector_key(int key)
     }
 
     if (key == KEY_UP || key == BTN_DPAD_UP) {
+        /* The list wraps: UP on the first row lands on the last one. */
         remember_profile_source(selected);
-        if (selected > 0) --selected;
+        selected = selected > 0 ? selected - 1 : selector_item_count() - 1;
         remember_profile_source(selected);
     } else if (key == KEY_DOWN || key == BTN_DPAD_DOWN) {
         remember_profile_source(selected);
-        if (selected < selector_item_count() - 1) ++selected;
+        selected = selected + 1 < selector_item_count() ? selected + 1 : 0;
         remember_profile_source(selected);
+    } else if ((key == KEY_LEFT || key == BTN_DPAD_LEFT) &&
+               (selected == entry_count || selected == entry_count + 1)) {
+        cycle_profile_source(-1);
+    } else if ((key == KEY_RIGHT || key == BTN_DPAD_RIGHT) &&
+               (selected == entry_count || selected == entry_count + 1)) {
+        cycle_profile_source(1);
     } else if (key == BTN_EAST) {
         running = 0;
     } else if (key == BTN_SOUTH) {
@@ -1534,7 +1621,7 @@ static void handle_diagnostics_key(int key)
             if (diagnostics_selection == 0) {
                 page_diagnostics = 2;
                 last_tested_key = -1;
-                set_status("Press buttons and move sticks; MENU+START exits");
+                set_status("Press buttons and move sticks; SELECT + START exits");
             } else {
                 request_usb_storage_mode();
             }
@@ -1547,9 +1634,10 @@ static void handle_diagnostics_key(int key)
         }
     } else if (page_diagnostics == 2) {
         /* A and B are testable inputs. Exit only through the deliberate
-         * MENU + START chord so neither face button is consumed as Back. */
-        if (baseos_button_test_exit_chord(key_is_down(BTN_TL2),
-                                          key_is_down(h700_keys ? BTN_TR : BTN_START))) {
+         * SELECT + START chord so neither face button is consumed as Back. */
+        if (baseos_is_button_test_exit_chord(
+                key_is_down(BTN_TL) || key_is_down(BTN_SELECT),
+                key_is_down(BTN_TR) || key_is_down(BTN_START))) {
             page_diagnostics = 1;
             last_tested_key = -1;
             set_status("Diagnostics");
