@@ -83,6 +83,9 @@ static volatile sig_atomic_t running = 1;
 enum { CONFIRM_NONE, CONFIRM_PROFILE, CONFIRM_PACKAGE };
 enum { TEXT_ENTRY_NONE, TEXT_ENTRY_CREATE_PROFILE, TEXT_ENTRY_RENAME_PROFILE };
 
+static const char *ui_translate(const char *s);
+static void set_status(const char *message);
+
 static void stop_ui(int sig) { (void)sig; running = 0; }
 
 static int bit_set(const unsigned long *bits, int n)
@@ -808,6 +811,8 @@ static void draw_header(const char *title, const char *subtitle)
     fill_rect(0, 69, w, 2, colour(41, 190, 165));
     draw_text(28, 37, "BASEOS / RG34XX", 23, colour(78, 220, 193));
     draw_text(28, 59, title, 19, colour(245, 248, 252));
+    draw_text(w - 142, 61, ui_chinese ? "L1 English" : "L1 中文", 11,
+              colour(173,190,205));
     /* Right-aligned status line. It used to start at a fixed x with a fixed
      * width, which clipped long package ids mid-glyph; measure first so the
      * text sits against the margin and ends in "..." when it cannot fit. */
@@ -832,11 +837,11 @@ static void render_selector(void)
     int row_h = 38;
     int total = selector_item_count();
     char default_label[96];
-    snprintf(default_label, sizeof(default_label), "Default: %s", current_default_id);
+    snprintf(default_label, sizeof(default_label), ui_chinese ? "默认启动：%s" : "Default: %s", current_default_id);
     draw_header("Frontend selector", default_label);
     draw_text(28, 101, "Installed frontend profiles", 16, colour(157, 177, 194));
     char count[80];
-    snprintf(count, sizeof(count), "%d profile(s)", entry_count);
+    snprintf(count, sizeof(count), ui_chinese ? "%d 个配置" : "%d profile(s)", entry_count);
     draw_text(w - 150, 101, count, 13, colour(157, 177, 194));
 
     int visible = ((int)fb_var.yres - 150) / row_h;
@@ -872,17 +877,21 @@ static void render_selector(void)
             int action = index - entry_count;
             const char *label = action == 0 ? "Create profile..." :
                                 action == 1 ? "Rename selected profile..." :
-                                              "BaseOS diagnostics";
+                                action == 2 ? "BaseOS diagnostics" :
+                                (ui_chinese ? "语言：中文（按 A 切换 English）" :
+                                              "Language: English (press A for 中文)");
             const char *detail = action == 0 ?
                 (source_supports_profiles() ? "Create another independent configuration from the selected profile" :
                                                "Select a managed or compatible profile first") :
                 action == 1 ?
                 (source_supports_profiles() ? "Change the selected profile's display name" :
                                                "Select a managed or compatible profile first") :
-                "System, storage, battery and physical button tests";
+                action == 2 ? "System, storage, battery and physical button tests" :
+                (ui_chinese ? "切换诊断页和前端选择的显示语言" :
+                              "Change the language on selector and diagnostics pages");
             draw_text(38, y + 16, label, 15,
                       is_selected ? colour(255,255,255) :
-                      action == 2 ? colour(192,208,220) : colour(123,220,194));
+                      action >= 2 ? colour(192,208,220) : colour(123,220,194));
             draw_line(38, y + 29, detail, 10, colour(145,165,180), w - 75);
         }
     }
@@ -928,7 +937,7 @@ static void render_diagnostics(void)
         draw_line(190, 143, u.release, 14, colour(236,242,247), w - 215);
     }
     draw_text(28, 178, "Frontend catalog", 14, colour(123,192,180));
-    snprintf(line, sizeof(line), "%d compatible profile(s)", entry_count);
+    snprintf(line, sizeof(line), ui_chinese ? "%d 个兼容配置" : "%d compatible profile(s)", entry_count);
     draw_text(190, 178, line, 14, colour(236,242,247));
 
     int mounted = 0;
@@ -953,19 +962,32 @@ static void render_diagnostics(void)
     snprintf(line, sizeof(line), "%s%%", battery);
     draw_text(190, 248, line, 14, colour(236,242,247));
     draw_text(28, 283, "USB Mass Storage", 14, colour(123,192,180));
-    draw_text(190, 283, "Hold MENU while powering on", 14, colour(236,242,247));
+    draw_line(190, 283, ui_chinese ?
+              "选择下方入口，重启后进入 USB 存储模式" :
+              "Select below; device restarts into USB storage mode",
+              13, colour(236,242,247), w - 215);
     draw_text(28, 318, "Boot log", 14, colour(123,192,180));
     draw_line(190, 318, "/mnt/sdcard/baseos-boot.log", 14,
               colour(236,242,247), w - 215);
 
-    /* Make the input test a primary, high-contrast action rather than a
-     * footer-only hint. */
-    fill_rect(22, 342, w - 44, 65, colour(24, 77, 77));
-    fill_rect(22, 342, 6, 65, colour(54, 220, 185));
-    draw_text(42, 369, "BUTTON TEST", 19, colour(255,255,255));
-    draw_text(42, 393, "Press A to test every button, trigger and analog stick",
-              13, colour(195,235,226));
-    draw_footer("A Open button test   B Frontend selector   START Refresh");
+    const char *actions[2] = {"BUTTON TEST", "USB STORAGE MODE"};
+    const char *details[2] = {
+        ui_chinese ? "测试实体按键、扳机和左右摇杆" : "Test buttons, triggers and both analog sticks",
+        ui_chinese ? "重启进入 USB 大容量存储；传输完成后可直接拔线" :
+                     "Reboot into USB mass storage; unplug after transfers finish"
+    };
+    for (int i = 0; i < 2; ++i) {
+        int y = 342 + i * 39;
+        int active = diagnostics_selection == i;
+        fill_rect(22, y, w - 44, 35,
+                  active ? colour(24,77,77) : colour(17,27,39));
+        if (active) fill_rect(22, y, 6, 35, colour(54,220,185));
+        draw_text(42, y + 15, actions[i], 15, colour(255,255,255));
+        draw_line(230, y + 23, details[i], 11, colour(195,215,225), w - 260);
+    }
+    draw_footer(ui_chinese ?
+        "上下选择  A 确认  B 返回前端选择  L1 切换 English  START 刷新" :
+        "UP/DOWN Select  A Open  B Selector  L1 Switch to 中文  START Refresh");
 }
 
 static const char *input_key_name(int key)
@@ -1440,9 +1462,12 @@ static void handle_selector_key(int key)
             begin_profile_text_entry(TEXT_ENTRY_CREATE_PROFILE);
         } else if (selected == entry_count + 1) {
             begin_profile_text_entry(TEXT_ENTRY_RENAME_PROFILE);
-        } else {
+        } else if (selected == entry_count + 2) {
             page_diagnostics = 1;
+            diagnostics_selection = 0;
             set_status("Diagnostics");
+        } else {
+            toggle_ui_language();
         }
     } else if (baseos_is_start_key(key)) {
         if (selected < entry_count && strcmp(entries[selected].status,"disabled") != 0) {
@@ -1486,10 +1511,18 @@ static void handle_text_entry_key(int key);
 static void handle_diagnostics_key(int key)
 {
     if (page_diagnostics == 1) {
-        if (key == BTN_SOUTH) {
-            page_diagnostics = 2;
-            last_tested_key = -1;
-            set_status("Press buttons and move sticks; MENU+START exits");
+        if (key == KEY_UP || key == BTN_DPAD_UP || key == KEY_DOWN || key == BTN_DPAD_DOWN) {
+            diagnostics_selection = 1 - diagnostics_selection;
+        } else if (key == BTN_WEST) {
+            toggle_ui_language();
+        } else if (key == BTN_SOUTH) {
+            if (diagnostics_selection == 0) {
+                page_diagnostics = 2;
+                last_tested_key = -1;
+                set_status("Press buttons and move sticks; MENU+START exits");
+            } else {
+                request_usb_storage_mode();
+            }
         } else if (key == BTN_EAST) {
             page_diagnostics = 0;
             set_status("Frontend selector");
@@ -1529,6 +1562,7 @@ static void detect_key_layout(void)
 
 static int run_ui(void)
 {
+    load_ui_language();
     if (framebuffer_open() != 0) return 2;
     detect_key_layout();
     signal(SIGINT, stop_ui);
@@ -1560,6 +1594,7 @@ int main(int argc, char **argv)
         return boot_selector_held() ? 0 : 1;
     if (argc == 2 && strcmp(argv[1], "--diagnostics") == 0) {
         page_diagnostics = 1;
+        diagnostics_selection = 0;
         return run_ui();
     }
     if (argc == 2 && strcmp(argv[1], "--selector") == 0)
