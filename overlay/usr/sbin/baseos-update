@@ -103,7 +103,7 @@ quarantine_payload() {
 		update_log "could not quarantine failed update $failed_payload"
 	fi
 	if [ "$was_ro" = 1 ]; then
-		mount -o remount,ro "$payload_dir" 2>>"$LOG" \\
+		mount -o remount,ro "$payload_dir" 2>>"$LOG" \
 			|| update_log "could not restore read-only mount $payload_dir"
 	fi
 	return 0
