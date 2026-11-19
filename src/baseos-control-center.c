@@ -34,6 +34,7 @@
 #define SELECTION "/run/baseos-frontend-selection"
 #define MANAGER "/usr/sbin/baseos-frontend-manager"
 #define FONT "/usr/share/baseos/boot.ttf"
+#define CJK_FONT "/usr/share/baseos/boot-cjk.ttc"
 #define TEST_AXIS_LX (KEY_MAX + 1)
 #define TEST_AXIS_LY (KEY_MAX + 2)
 #define TEST_AXIS_RX (KEY_MAX + 3)
@@ -60,9 +61,12 @@ static struct fb_var_screeninfo fb_var;
 static struct fb_fix_screeninfo fb_fix;
 static FT_Library ft_lib;
 static FT_Face ft_face;
+static FT_Face ft_cjk_face;
 static int confirm_mode;
 static int confirm_action;
 static int page_diagnostics;
+static int diagnostics_selection;
+static int ui_chinese = 1;
 static int last_tested_key = -1;
 static char profile_source_id[64];
 static int text_entry_mode;
@@ -257,16 +261,63 @@ static void fill_rect(int x, int y, int w, int h, uint32_t p)
         for (int xx = x; xx < x + w; ++xx) put_pixel(xx, yy, p);
 }
 
+static unsigned int utf8_next(const unsigned char **cursor)
+{
+    const unsigned char *p = *cursor;
+    unsigned int cp;
+    if (p[0] < 0x80) {
+        *cursor = p + 1;
+        return p[0];
+    }
+    if ((p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) {
+        cp = ((unsigned int)(p[0] & 0x1f) << 6) | (p[1] & 0x3f);
+        *cursor = p + 2;
+        return cp;
+    }
+    if ((p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 &&
+        (p[2] & 0xc0) == 0x80) {
+        cp = ((unsigned int)(p[0] & 0x0f) << 12) |
+             ((unsigned int)(p[1] & 0x3f) << 6) | (p[2] & 0x3f);
+        *cursor = p + 3;
+        return cp;
+    }
+    if ((p[0] & 0xf8) == 0xf0 && (p[1] & 0xc0) == 0x80 &&
+        (p[2] & 0xc0) == 0x80 && (p[3] & 0xc0) == 0x80) {
+        cp = ((unsigned int)(p[0] & 0x07) << 18) |
+             ((unsigned int)(p[1] & 0x3f) << 12) |
+             ((unsigned int)(p[2] & 0x3f) << 6) | (p[3] & 0x3f);
+        *cursor = p + 4;
+        return cp;
+    }
+    *cursor = p + 1;
+    return '?';
+}
+
+static FT_Face face_for_codepoint(unsigned int cp)
+{
+    if (cp > 0x7f && ft_cjk_face) return ft_cjk_face;
+    return ft_face;
+}
+
 static void draw_text(int x, int baseline, const char *s, int px, uint32_t fg)
 {
     if (!ft_face || !s) return;
-    FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)px);
+    s = ui_translate(s);
     int pen = x;
-    for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
-        if (*p < 0x20 || *p > 0x7e) continue;
-        if (FT_Load_Char(ft_face, *p, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL))
-            continue;
-        FT_GlyphSlot glyph = ft_face->glyph;
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        unsigned int cp = utf8_next(&p);
+        FT_Face face = face_for_codepoint(cp);
+        if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)px) != 0 ||
+            FT_Load_Char(face, cp, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL)) {
+            if (face != ft_face &&
+                (FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)px) != 0 ||
+                 FT_Load_Char(ft_face, '?', FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL)))
+                continue;
+            if (face == ft_face) continue;
+            face = ft_face;
+        }
+        FT_GlyphSlot glyph = face->glyph;
         FT_Bitmap *bm = &glyph->bitmap;
         int gx = pen + glyph->bitmap_left;
         int gy = baseline - glyph->bitmap_top;
@@ -277,7 +328,6 @@ static void draw_text(int x, int baseline, const char *s, int px, uint32_t fg)
                 int xx = gx + (int)col, yy = gy + (int)row;
                 if (xx < 0 || yy < 0 || xx >= (int)fb_var.xres ||
                     yy >= (int)fb_var.yres) continue;
-                /* Alpha blend in the native channel format. */
                 uint8_t *src = fb_canvas + (size_t)yy * fb_fix.line_length +
                                (size_t)xx * (fb_var.bits_per_pixel / 8);
                 uint32_t under = 0;
@@ -295,7 +345,6 @@ static void draw_text(int x, int baseline, const char *s, int px, uint32_t fg)
                 uint8_t ub = fb_var.blue.length ?
                     (((under >> fb_var.blue.offset) & ((1U << fb_var.blue.length)-1U)) * 255U /
                      ((1U << fb_var.blue.length)-1U)) : 0;
-                /* Recover the requested RGB from the packed colour. */
                 uint8_t fr = fb_var.red.length ?
                     (((fg >> fb_var.red.offset) & ((1U << fb_var.red.length)-1U)) * 255U /
                      ((1U << fb_var.red.length)-1U)) : 0;
@@ -312,7 +361,7 @@ static void draw_text(int x, int baseline, const char *s, int px, uint32_t fg)
                 put_pixel(xx, yy, colour(nr, ng, nb));
             }
         }
-        pen += glyph->advance.x >> 6;
+        pen += (int)(glyph->advance.x >> 6);
     }
 }
 
@@ -324,11 +373,20 @@ static int text_width(const char *s, int px)
 {
     int width = 0;
     if (!ft_face || !s) return 0;
-    FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)px);
-    for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
-        if (*p < 0x20 || *p > 0x7e) continue;
-        if (!FT_Load_Char(ft_face, *p, FT_LOAD_DEFAULT))
-            width += (int)(ft_face->glyph->advance.x >> 6);
+    s = ui_translate(s);
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        unsigned int cp = utf8_next(&p);
+        FT_Face face = face_for_codepoint(cp);
+        if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)px) != 0 ||
+            FT_Load_Char(face, cp, FT_LOAD_DEFAULT)) {
+            if (face != ft_face &&
+                FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)px) == 0 &&
+                FT_Load_Char(ft_face, '?', FT_LOAD_DEFAULT) == 0)
+                width += (int)(ft_face->glyph->advance.x >> 6);
+        } else {
+            width += (int)(face->glyph->advance.x >> 6);
+        }
     }
     return width;
 }
@@ -339,6 +397,7 @@ static void draw_line(int x, int baseline, const char *s, int px,
                       uint32_t fg, int max_width)
 {
     char tmp[220];
+    s = ui_translate(s);
     size_t len = strlen(s);
     if (len >= sizeof(tmp)) len = sizeof(tmp) - 1;
     memcpy(tmp, s, len);
@@ -346,7 +405,10 @@ static void draw_line(int x, int baseline, const char *s, int px,
     if (ft_face && text_width(tmp, px) > max_width) {
         int ell = text_width("...", px);
         while (len > 0) {
-            tmp[--len] = 0;
+            --len;
+            while (len > 0 && ((unsigned char)tmp[len] & 0xc0) == 0x80)
+                --len;
+            tmp[len] = 0;
             if (text_width(tmp, px) + ell <= max_width) break;
         }
         if (len + 3 < sizeof(tmp)) memcpy(tmp + len, "...", 4);
@@ -392,7 +454,7 @@ static int find_entry_by_id(const char *id)
 
 static int selector_item_count(void)
 {
-    return entry_count + 3; /* create profile, rename profile, diagnostics */
+    return entry_count + 4; /* create, rename, diagnostics, language */
 }
 
 static int source_entry_index(void)
@@ -550,6 +612,163 @@ static void reload_catalog(void)
     load_catalog();
 }
 
+
+typedef struct { const char *en; const char *zh; } UiTranslation;
+
+static const UiTranslation ui_translations[] = {
+    {"Frontend selector", "前端选择"},
+    {"Installed frontend profiles", "已安装的前端配置"},
+    {"Create profile...", "新建配置..."},
+    {"Rename selected profile...", "重命名所选配置..."},
+    {"BaseOS diagnostics", "BaseOS 系统诊断"},
+    {"Create another independent configuration from the selected profile", "基于所选配置新建独立配置"},
+    {"Select a managed or compatible profile first", "请先选择受管理或兼容前端配置"},
+    {"Change the selected profile's display name", "修改所选配置的显示名称"},
+    {"System, storage, battery and physical button tests", "系统、存储、电池和实体按键测试"},
+    {"[DISABLED]", "[已禁用]"},
+    {"[DEFAULT]", "[默认]"},
+    {"[MANAGED]", "[受管理]"},
+    {"[COMPAT]", "[兼容]"},
+    {"[LEGACY]", "[旧式]"},
+    {"No compatible frontend found. Copy one into Frontends/.", "未发现兼容前端，请将前端放入 Frontends/。"},
+    {"A Open/Launch   START Default   SELECT Enable/disable   L1 Remove profile   Y Delete frontend", "A 打开/启动  START 设为默认  SELECT 启用/禁用  L1 删除配置  Y 删除前端"},
+    {"Confirm removal", "确认删除"},
+    {"This cannot be undone", "此操作无法撤销"},
+    {"Remove this configuration profile?", "确定删除此配置？"},
+    {"Delete this frontend package?", "确定删除此前端程序？"},
+    {"The shared program and other profiles will remain.", "共享程序和其他配置将保留。"},
+    {"All profiles and this program folder will be removed.", "所有配置及此前端程序目录都会删除。"},
+    {"Games, Saves and private instance data are preserved.", "Games、Saves 和各配置的独立数据会保留。"},
+    {"A Confirm   B Cancel", "A 确认  B 取消"},
+    {"System diagnostics", "系统诊断"},
+    {"BaseOS / RG34XX", "BaseOS / RG34XX"},
+    {"Device", "设备"},
+    {"Anbernic RG34XX / Allwinner H700", "Anbernic RG34XX / 全志 H700"},
+    {"Kernel", "内核"},
+    {"Frontend catalog", "前端列表"},
+    {"Storage", "存储"},
+    {"/mnt/sdcard mounted", "/mnt/sdcard 已挂载"},
+    {"No user-data card mounted", "未挂载用户数据卡"},
+    {"Battery", "电量"},
+    {"USB Mass Storage", "USB 大容量存储"},
+    {"Hold MENU while powering on", "开机时按住 MENU"},
+    {"Boot log", "启动日志"},
+    {"BUTTON TEST", "按键测试"},
+    {"Press A to test every button, trigger and analog stick", "按 A 测试所有按键、扳机和摇杆"},
+    {"Button test", "按键测试"},
+    {"Handheld control map", "掌机按键布局"},
+    {"Press each control; the matching key lights up.", "按下实体按键，对应位置会高亮显示。"},
+    {"Waiting for input", "等待输入"},
+    {"Other input", "其他输入"},
+    {"L3 / Left stick click", "L3 / 左摇杆按下"},
+    {"R3 / Right stick click", "R3 / 右摇杆按下"},
+    {"Left stick X axis", "左摇杆 X 轴"},
+    {"Left stick Y axis", "左摇杆 Y 轴"},
+    {"Right stick X axis", "右摇杆 X 轴"},
+    {"Right stick Y axis", "右摇杆 Y 轴"},
+    {"D-pad Up", "十字键 上"},
+    {"D-pad Down", "十字键 下"},
+    {"D-pad Left", "十字键 左"},
+    {"D-pad Right", "十字键 右"},
+    {"X / West", "X / 左侧"},
+    {"L1 / Select", "L1 / 选择"},
+    {"R1 / Start", "R1 / 开始"},
+    {"L2 / Menu", "L2 / 菜单"},
+    {"Left stick X axis", "左摇杆 X 轴"},
+    {"Left stick Y axis", "左摇杆 Y 轴"},
+    {"Right stick X axis", "右摇杆 X 轴"},
+    {"Right stick Y axis", "右摇杆 Y 轴"},
+    {"Hold MENU + START together to return to diagnostics", "同时按住 MENU + START 返回诊断页面"},
+    {"Create frontend profile", "新建前端配置"},
+    {"Rename frontend profile", "重命名前端配置"},
+    {"On-device keyboard", "设备键盘"},
+    {"Profile name", "配置名称"},
+    {"D-pad Move   A Select   B Backspace   START Save   CANCEL Exit", "十字键移动  A 输入  B 退格  START 保存  CANCEL 取消"},
+    {"Press buttons and move sticks; MENU+START exits", "按键或移动摇杆；同时按 MENU+START 退出"},
+    {"A Open button test   B Frontend selector   START Refresh", "A 打开按键测试  B 返回前端选择  START 刷新"},
+    {"A Open/Launch", "A 打开/启动"},
+    {"Cancelled", "已取消"},
+    {"Profile removed successfully", "配置已删除"},
+    {"Frontend removed successfully", "前端已删除"},
+    {"Removal failed; manager rejected the operation", "删除失败：管理器拒绝了操作"},
+    {"Unable to write one-boot selection", "无法写入本次启动选择"},
+    {"Enable this frontend before launching", "请先启用此前端再启动"},
+    {"Diagnostics", "系统诊断"},
+    {"Default saved", "默认配置已保存"},
+    {"Could not save default profile", "无法保存默认配置"},
+    {"Frontend status updated", "前端状态已更新"},
+    {"Could not change frontend status", "无法更改前端状态"},
+    {"Profile name cannot be empty", "配置名称不能为空"},
+    {"Could not generate a unique profile ID", "无法生成唯一的配置 ID"},
+    {"Profile creation failed; check the profile name", "创建配置失败，请检查名称"},
+    {"Profile created", "配置已创建"},
+    {"Profile rename failed; check the profile name", "重命名失败，请检查名称"},
+    {"Profile renamed", "配置已重命名"},
+    {"Selected profile is no longer available", "所选配置已不可用"},
+    {"Enter a name for the new profile", "请输入新配置名称"},
+    {"Enter the new profile name", "请输入新的配置名称"},
+    {"Rebooting into USB storage mode...", "正在重启并进入 USB 存储模式..."},
+    {"Could not request USB storage mode", "无法请求 USB 存储模式"},
+    {"USB storage request saved; rebooting", "USB 存储请求已保存，正在重启"},
+    {"L1 English", "L1 English"},
+    {"L1 中文", "L1 中文"}
+};
+
+static const char *ui_translate(const char *s)
+{
+    if (!s || !ui_chinese) return s;
+    for (size_t i = 0; i < sizeof(ui_translations) / sizeof(ui_translations[0]); ++i)
+        if (strcmp(s, ui_translations[i].en) == 0)
+            return ui_translations[i].zh;
+    return s;
+}
+
+static void load_ui_language(void)
+{
+    FILE *fp = fopen("/data/baseos-ui-language", "r");
+    char value[16] = "";
+    ui_chinese = 1;
+    if (!fp) return;
+    if (fgets(value, sizeof(value), fp) && strncmp(value, "en", 2) == 0)
+        ui_chinese = 0;
+    fclose(fp);
+}
+
+static void toggle_ui_language(void)
+{
+    const char *value;
+    FILE *fp;
+    ui_chinese = !ui_chinese;
+    value = ui_chinese ? "zh\n" : "en\n";
+    fp = fopen("/data/baseos-ui-language.tmp", "w");
+    if (fp) {
+        fputs(value, fp);
+        if (fclose(fp) == 0)
+            (void)rename("/data/baseos-ui-language.tmp", "/data/baseos-ui-language");
+        else
+            (void)unlink("/data/baseos-ui-language.tmp");
+    }
+    set_status(ui_chinese ? "Language changed to Chinese" : "Language changed to English");
+}
+
+static void request_usb_storage_mode(void)
+{
+    FILE *fp = fopen("/data/usb-storage-next-boot", "w");
+    if (!fp) {
+        set_status("Could not request USB storage mode");
+        return;
+    }
+    fputs("1\n", fp);
+    if (fclose(fp) != 0) {
+        (void)unlink("/data/usb-storage-next-boot");
+        set_status("Could not request USB storage mode");
+        return;
+    }
+    sync();
+    set_status("USB storage request saved; rebooting");
+    (void)system("/usr/sbin/reboot");
+}
+
 static void set_status(const char *message)
 {
     snprintf(status_text, sizeof(status_text), "%s", message ? message : "");
@@ -574,6 +793,10 @@ static int framebuffer_open(void)
     if (!fb_canvas) return -1;
     if (FT_Init_FreeType(&ft_lib) != 0) return -1;
     if (FT_New_Face(ft_lib, FONT, 0, &ft_face) != 0) return -1;
+    /* Chinese defaults to on; keep the Latin face for the existing visual style
+     * and use WenQuanYi only for non-ASCII glyphs. The font is optional at runtime
+     * so an older system still opens the selector in English-compatible mode. */
+    (void)FT_New_Face(ft_lib, CJK_FONT, 0, &ft_cjk_face);
     return 0;
 }
 
@@ -1322,6 +1545,7 @@ static int run_ui(void)
         if (running) render();
     }
     close_inputs();
+    if (ft_cjk_face) FT_Done_Face(ft_cjk_face);
     if (ft_face) FT_Done_Face(ft_face);
     if (ft_lib) FT_Done_FreeType(ft_lib);
     free(fb_canvas);
