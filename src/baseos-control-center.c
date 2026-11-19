@@ -986,8 +986,8 @@ static void render_diagnostics(void)
     const char *actions[2] = {"BUTTON TEST", "USB STORAGE MODE"};
     const char *details[2] = {
         ui_chinese ? "测试实体按键、扳机和左右摇杆" : "Test buttons, triggers and both analog sticks",
-        ui_chinese ? "重启进入 USB 大容量存储；传输完成后可直接拔线" :
-                     "Reboot into USB mass storage; unplug after transfers finish"
+        ui_chinese ? "先接数据线；完成传输后可直接拔线" :
+                     "Connect cable first; unplug after transfers finish"
     };
     for (int i = 0; i < 2; ++i) {
         int y = 342 + i * 39;
