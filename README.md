@@ -103,6 +103,9 @@ package layout, compatibility rules and validation.
   AArch64 ELF payloads under `System/`. No product name or binary basename
   is required. Scripts run through `/bin/sh`; ELF files use the system loader.
 
+
+For the RG34XX multi-frontend test build, see the [Chinese beta user guide](docs/RG34XX-MULTI-FRONTEND-USER-GUIDE.md) for installation, frontend setup, path mapping, and shared/private data rules.
+
 ## Settings
 
 Edit `baseos.conf` at the root of TF1's visible partition, then restart.
