@@ -530,6 +530,24 @@ rename_profile() {
   printf '%s\n' "RENAMED_PROFILE:$ENTRY_PACKAGE/$ENTRY_PROFILE"
 }
 
+# How many compatibility sidecars claim the same program directory? A
+# one-to-one mapping is normal even when the sidecar name differs from the
+# folder name (full-copy installs). More than one means the catalog has two
+# entries for one program, and deleting either would destroy the other's code.
+compat_source_refcount() {
+  csr_root=$1
+  csr_source=$2
+  csr_count=0
+  for csr_meta in "$csr_root/.baseos/compat"/*; do
+    [ -d "$csr_meta" ] && [ ! -L "$csr_meta" ] || continue
+    [ -f "$csr_meta/baseos-frontend.conf" ] || continue
+    baseos_frontend_read_value "$csr_meta/baseos-frontend.conf" compat_source ""
+    [ "$BASEOS_VALUE" = "$csr_source" ] || continue
+    csr_count=$((csr_count + 1))
+  done
+  printf '%s\n' "$csr_count"
+}
+
 # Rename the frontend folder itself (Frontends/<name>). The selector exposes it
 # as an R1 shortcut on the row, next to X (delete). Renaming changes the whole
 # package identity: program folder, compatibility sidecar, instance data,
@@ -575,13 +593,14 @@ rename_package() {
     case "$rp_old_source" in
       ''|.|..|*/*|*'|'*) echo "invalid compatibility source name" >&2; return 1 ;;
     esac
-    # An inconsistent sidecar is exactly what produced two catalog rows and
-    # the wrong directory being deleted. Refuse to rename it.
-    [ "$rp_old_source" = "$ENTRY_PACKAGE" ] || {
-      echo "refusing to rename: compat_source '$rp_old_source' does not match package '$ENTRY_PACKAGE'" >&2
+    # A sidecar name may legitimately differ from its program folder. What is
+    # never safe is two sidecars sharing one program directory.
+    rp_refs=$(compat_source_refcount "$ENTRY_ROOT" "$rp_old_source")
+    [ "$rp_refs" -eq 1 ] || {
+      echo "refusing to rename: $rp_refs compatibility sidecars share program directory '$rp_old_source'" >&2
       return 1
     }
-    rp_old=$ENTRY_ROOT/Frontends/$ENTRY_PACKAGE
+    rp_old=$ENTRY_ROOT/Frontends/$rp_old_source
   else
     rp_old_source=$ENTRY_PACKAGE
     rp_old=$ENTRY_ROOT/Frontends/$ENTRY_PACKAGE
@@ -603,6 +622,11 @@ rename_package() {
   if [ "$ENTRY_KIND" = compat ]; then
     [ ! -e "$rp_new_meta" ] && [ ! -L "$rp_new_meta" ] || {
       echo "a compatibility frontend named $rp_new already exists" >&2
+      return 1
+    }
+    rp_new_refs=$(compat_source_refcount "$ENTRY_ROOT" "$rp_new")
+    [ "$rp_new_refs" -eq 0 ] || {
+      echo "another compatibility sidecar already targets program directory '$rp_new'" >&2
       return 1
     }
   fi
@@ -632,9 +656,10 @@ rename_package() {
     mv "$rp_meta" "$rp_new_meta" || return 1
     rp_conf=$rp_new_meta/baseos-frontend.conf
     rp_tmp=$(mktemp "$rp_conf.tmp.XXXXXX") || return 1
-    awk -v src="$rp_new" -v old="$ENTRY_PACKAGE" '
+    awk -v src="$rp_new" -v oldpkg="$ENTRY_PACKAGE" -v oldsrc="$rp_old_source" '
       /^compat_source=/ { print "compat_source=" src; seen=1; next }
-      /^display_name=/ { if ($0 == "display_name=" old) { print "display_name=" src; next } }
+      /^display_name=/ { if ($0 == "display_name=" oldpkg || $0 == "display_name=" oldsrc) {
+          print "display_name=" src; next } }
       { print }
     ' "$rp_conf" > "$rp_tmp" || { rm -f "$rp_tmp"; return 1; }
     chmod 0644 "$rp_tmp" 2>/dev/null || :
@@ -847,12 +872,13 @@ case "$cmd" in
       baseos_frontend_read_value "$compat_manifest" compat_source ""
       compat_source=$BASEOS_VALUE
       case "$compat_source" in ''|.|..|*/*|*'|'*) echo "invalid compatibility source name" >&2; exit 1 ;; esac
-      # Full removal below deletes Frontends/<compat_source>. If the sidecar's
-      # source ever drifts from the package name (for example after a partial
-      # rename), that path can belong to a different frontend. Never delete on
-      # a mismatched identity.
-      [ "$compat_source" = "$ENTRY_PACKAGE" ] || {
-        echo "refusing to remove: compat_source '$compat_source' does not match package '$ENTRY_PACKAGE'" >&2
+      # Full removal below deletes Frontends/<compat_source>. A sidecar name
+      # may differ from its folder, but two sidecars sharing one folder means
+      # the catalog has duplicate identities and the folder belongs to both.
+      # Deleting either row would destroy the other frontend's program.
+      cr_refs=$(compat_source_refcount "$ENTRY_ROOT" "$compat_source")
+      [ "$cr_refs" -eq 1 ] || {
+        echo "refusing to remove: $cr_refs compatibility sidecars share program directory '$compat_source'" >&2
         exit 1
       }
       expected_dir=$ENTRY_ROOT/Frontends/$compat_source
