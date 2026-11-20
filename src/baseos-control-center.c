@@ -1412,8 +1412,19 @@ static void render_text_entry(void)
         int cy = 208 + row * 42;
         int width = cell_w - 4;
         if (row == 4 && col >= 4) width = cell_w - 4;
-        draw_button_tile(cx, cy, width, 32, text_keyboard_keys[i],
-                         i == text_entry_cursor);
+        /* The keyboard types in upper case when CAP is on, so the keycaps
+         * have to show it too; function keys keep their labels. */
+        const char *key_label = text_keyboard_keys[i];
+        char caps_label[2];
+        if (text_entry_caps && strlen(key_label) == 1 &&
+            key_label[0] >= 'a' && key_label[0] <= 'z') {
+            caps_label[0] = (char)toupper((unsigned char)key_label[0]);
+            caps_label[1] = 0;
+            key_label = caps_label;
+        }
+        draw_button_tile(cx, cy, width, 32, key_label,
+                         i == text_entry_cursor ||
+                         (text_entry_caps && strcmp(text_keyboard_keys[i], "CAP") == 0));
     }
     draw_footer(ui_chinese ?
         "方向键 移动  A 输入  B 退格  START 保存  MENU 退出" :

@@ -364,4 +364,86 @@ if run_manager rename-package rename-dst--base "bad name"; then
   fail "rename-package accepted an invalid frontend name"
 fi
 
+# Compatibility packages must move as one identity. Renaming only the program
+# folder used to leave the old sidecar in the catalog, and deleting that stale
+# row then removed the renamed program directory.
+CR_META=$TF1/.baseos/compat/rename-compat
+CR_PROGRAM=$TF1/Frontends/rename-compat
+mkdir -p "$CR_META/profiles" "$CR_PROGRAM/System" \
+  "$TF1/.baseos/instances/rename-compat--default/data" \
+  "$TF1/.baseos/payload"
+: > "$CR_PROGRAM/System/launch_frontend.sh"
+cat > "$CR_META/baseos-frontend.conf" <<'EOF'
+package_api=1
+display_name=Compat Rename
+compat_api=1
+compat_source=rename-compat
+compat_entrypoint=System/launch_frontend.sh
+compat_mode=script-card
+priority=100
+EOF
+cat > "$CR_META/profiles/default.conf" <<'EOF'
+profile_api=1
+display_name=Compat Rename
+priority=100
+EOF
+cat > "$CR_META/launch.sh" <<EOF
+BASEOS_COMPAT_PROGRAM_DIR='$TF1/Frontends/rename-compat'
+EOF
+printf 'keep\n' > "$TF1/.baseos/instances/rename-compat--default/data/marker"
+printf 'payload_api=1\npath=Private\n' > "$TF1/.baseos/payload/rename-compat.conf"
+run_manager catalog
+rows_before=$(wc -l < "$CATALOG" | tr -d ' ')
+grep -F -q 'rename-compat--default|' "$CATALOG" || fail "compatibility rename source was not catalogued"
+run_manager set-default rename-compat--default
+run_manager rename-package rename-compat--default renamed-compat
+[ -d "$TF1/Frontends/renamed-compat" ] || fail "compatibility program folder was not renamed"
+[ ! -e "$CR_PROGRAM" ] || fail "old compatibility program folder remained"
+[ -d "$TF1/.baseos/compat/renamed-compat" ] || fail "compatibility sidecar was not renamed"
+[ ! -e "$CR_META" ] || fail "old compatibility sidecar remained"
+grep -F -q 'compat_source=renamed-compat' "$TF1/.baseos/compat/renamed-compat/baseos-frontend.conf" ||
+  fail "compatibility source was not updated"
+grep -F -q 'Frontends/renamed-compat' "$TF1/.baseos/compat/renamed-compat/launch.sh" ||
+  fail "compatibility launcher still points at the old folder"
+[ -f "$TF1/.baseos/instances/renamed-compat--default/data/marker" ] ||
+  fail "compatibility instance data did not follow the rename"
+[ ! -e "$TF1/.baseos/instances/rename-compat--default" ] ||
+  fail "old compatibility instance data remained"
+[ -f "$TF1/.baseos/payload/renamed-compat.conf" ] ||
+  fail "compatibility payload manifest did not follow the rename"
+[ "$(sed -n 's/^frontend_id=//p' "$CONFIG" | tail -n 1)" = renamed-compat--default ] ||
+  fail "renamed compatibility frontend did not keep the saved default"
+grep -F -q 'renamed-compat--default|' "$CATALOG" ||
+  fail "catalog did not pick up the renamed compatibility frontend"
+if grep -F -q 'rename-compat--default|' "$CATALOG"; then
+  fail "rename left a duplicate row under the old package id"
+fi
+[ "$(wc -l < "$CATALOG" | tr -d ' ')" = "$rows_before" ] ||
+  fail "rename changed the catalog row count (duplicate or lost entry)"
+
+# A sidecar whose compat_source points at another package must never be
+# allowed to delete that package's program directory.
+BAD_META=$TF1/.baseos/compat/inconsistent
+mkdir -p "$BAD_META/profiles"
+cat > "$BAD_META/baseos-frontend.conf" <<'EOF'
+package_api=1
+display_name=Inconsistent
+compat_api=1
+compat_source=renamed-compat
+compat_entrypoint=System/launch_frontend.sh
+compat_mode=script-card
+priority=50
+EOF
+cat > "$BAD_META/profiles/default.conf" <<'EOF'
+profile_api=1
+display_name=Inconsistent
+priority=100
+EOF
+run_manager catalog
+if run_manager uninstall inconsistent--default; then
+  fail "manager removed a frontend through a mismatched compat_source"
+fi
+[ -d "$TF1/Frontends/renamed-compat" ] ||
+  fail "mismatched sidecar deleted another frontend's program directory"
+
 echo "PASS: frontend manager catalog, profile/full uninstall, legacy adapter selector lifecycle, data retention, package rename/default migration and symlink guard"

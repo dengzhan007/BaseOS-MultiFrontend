@@ -531,9 +531,11 @@ rename_profile() {
 }
 
 # Rename the frontend folder itself (Frontends/<name>). The selector exposes it
-# as an R1 shortcut on the row, next to X (delete). Managed packages also move
-# their instance data and record the old package id so the saved default keeps
-# pointing at the renamed frontend.
+# as an R1 shortcut on the row, next to X (delete). Renaming changes the whole
+# package identity: program folder, compatibility sidecar, instance data,
+# payload/disabled markers and the saved default all move together. Otherwise
+# discovery sees the moved program folder as a second frontend, and deleting
+# one of the two entries can remove the other one's program directory.
 rename_package() {
   [ "$#" -eq 1 ] || return 2
   rp_new=$1
@@ -556,12 +558,14 @@ rename_package() {
     return 1
   }
   rp_meta=
+  rp_new_meta=
   if [ "$ENTRY_KIND" = compat ]; then
     [ ! -L "$ENTRY_ROOT/.baseos/compat" ] || {
       echo "refusing symlinked compatibility directory" >&2
       return 1
     }
     rp_meta=$ENTRY_ROOT/.baseos/compat/$ENTRY_PACKAGE
+    rp_new_meta=$ENTRY_ROOT/.baseos/compat/$rp_new
     [ -d "$rp_meta" ] && [ ! -L "$rp_meta" ] || {
       echo "compatibility metadata is missing" >&2
       return 1
@@ -571,7 +575,13 @@ rename_package() {
     case "$rp_old_source" in
       ''|.|..|*/*|*'|'*) echo "invalid compatibility source name" >&2; return 1 ;;
     esac
-    rp_old=$ENTRY_ROOT/Frontends/$rp_old_source
+    # An inconsistent sidecar is exactly what produced two catalog rows and
+    # the wrong directory being deleted. Refuse to rename it.
+    [ "$rp_old_source" = "$ENTRY_PACKAGE" ] || {
+      echo "refusing to rename: compat_source '$rp_old_source' does not match package '$ENTRY_PACKAGE'" >&2
+      return 1
+    }
+    rp_old=$ENTRY_ROOT/Frontends/$ENTRY_PACKAGE
   else
     rp_old_source=$ENTRY_PACKAGE
     rp_old=$ENTRY_ROOT/Frontends/$ENTRY_PACKAGE
@@ -581,32 +591,63 @@ rename_package() {
     echo "frontend folder is missing or is a symlink" >&2
     return 1
   }
-  if [ "$rp_old_source" = "$rp_new" ]; then
+  [ "$rp_old_source" != "$rp_new" ] || {
     echo "the frontend already has that name" >&2
     return 1
-  fi
+  }
   rp_new_dir=$ENTRY_ROOT/Frontends/$rp_new
   [ ! -e "$rp_new_dir" ] && [ ! -L "$rp_new_dir" ] || {
     echo "a frontend folder named $rp_new already exists" >&2
     return 1
   }
-  [ ! -e "$ENTRY_ROOT/.baseos/compat/$rp_new" ] || {
-    echo "a compatibility frontend named $rp_new already exists" >&2
+  if [ "$ENTRY_KIND" = compat ]; then
+    [ ! -e "$rp_new_meta" ] && [ ! -L "$rp_new_meta" ] || {
+      echo "a compatibility frontend named $rp_new already exists" >&2
+      return 1
+    }
+  fi
+  rp_payload=$ENTRY_ROOT/.baseos/payload/$ENTRY_PACKAGE.conf
+  rp_new_payload=$ENTRY_ROOT/.baseos/payload/$rp_new.conf
+  rp_disabled=$ENTRY_ROOT/.baseos/compat-disabled/$ENTRY_PACKAGE
+  rp_new_disabled=$ENTRY_ROOT/.baseos/compat-disabled/$rp_new
+  rp_instances=$ENTRY_ROOT/.baseos/instances
+  [ ! -e "$rp_new_payload" ] || { echo "a payload manifest named $rp_new already exists" >&2; return 1; }
+  [ ! -e "$rp_new_disabled" ] && [ ! -L "$rp_new_disabled" ] || {
+    echo "a compatibility disable marker named $rp_new already exists" >&2
     return 1
   }
+  for rp_instance in "$rp_instances/$ENTRY_PACKAGE--"*; do
+    [ -e "$rp_instance" ] || continue
+    rp_instance_name=${rp_instance##*/}
+    rp_suffix=${rp_instance_name#"$ENTRY_PACKAGE--"}
+    [ ! -e "$rp_instances/$rp_new--$rp_suffix" ] || {
+      echo "an instance named $rp_new--$rp_suffix already exists" >&2
+      return 1
+    }
+  done
 
   mv "$rp_old" "$rp_new_dir" || return 1
 
   if [ "$ENTRY_KIND" = compat ]; then
-    rp_conf=$rp_meta/baseos-frontend.conf
+    mv "$rp_meta" "$rp_new_meta" || return 1
+    rp_conf=$rp_new_meta/baseos-frontend.conf
     rp_tmp=$(mktemp "$rp_conf.tmp.XXXXXX") || return 1
-    awk -v src="$rp_new" -v old="$rp_old_source" '
+    awk -v src="$rp_new" -v old="$ENTRY_PACKAGE" '
       /^compat_source=/ { print "compat_source=" src; seen=1; next }
       /^display_name=/ { if ($0 == "display_name=" old) { print "display_name=" src; next } }
       { print }
     ' "$rp_conf" > "$rp_tmp" || { rm -f "$rp_tmp"; return 1; }
     chmod 0644 "$rp_tmp" 2>/dev/null || :
     mv -f "$rp_tmp" "$rp_conf" || { rm -f "$rp_tmp"; return 1; }
+    rp_launch=$rp_new_meta/launch.sh
+    if [ -f "$rp_launch" ] && [ ! -L "$rp_launch" ]; then
+      rp_launch_tmp=$(mktemp "$rp_launch.tmp.XXXXXX") || return 1
+      sed "s|$rp_old|$rp_new_dir|g" "$rp_launch" > "$rp_launch_tmp" || {
+        rm -f "$rp_launch_tmp"; return 1;
+      }
+      chmod 0755 "$rp_launch_tmp" 2>/dev/null || :
+      mv -f "$rp_launch_tmp" "$rp_launch" || { rm -f "$rp_launch_tmp"; return 1; }
+    fi
   else
     rp_conf=$rp_new_dir/baseos-frontend.conf
     if [ -f "$rp_conf" ] && [ ! -L "$rp_conf" ]; then
@@ -619,17 +660,37 @@ rename_package() {
       chmod 0644 "$rp_tmp" 2>/dev/null || :
       mv -f "$rp_tmp" "$rp_conf" || { rm -f "$rp_tmp"; return 1; }
     fi
-    rp_instances=$ENTRY_ROOT/.baseos/instances
-    if [ -d "$rp_instances" ] && [ ! -L "$rp_instances" ]; then
-      for rp_instance in "$rp_instances/$ENTRY_PACKAGE--"*; do
-        [ -e "$rp_instance" ] || continue
-        [ -L "$rp_instance" ] && continue
-        rp_suffix=${rp_instance##*/}
-        rp_suffix=${rp_suffix#"$ENTRY_PACKAGE--"}
-        [ ! -e "$rp_instances/$rp_new--$rp_suffix" ] || continue
-        mv "$rp_instance" "$rp_instances/$rp_new--$rp_suffix" || return 1
-      done
-    fi
+  fi
+
+  # Instance data belongs to the frontend, not to the old folder name, and
+  # must follow for compatibility packages too.
+  if [ -d "$rp_instances" ] && [ ! -L "$rp_instances" ]; then
+    for rp_instance in "$rp_instances/$ENTRY_PACKAGE--"*; do
+      [ -e "$rp_instance" ] || continue
+      [ -L "$rp_instance" ] && continue
+      rp_instance_name=${rp_instance##*/}
+      rp_suffix=${rp_instance_name#"$ENTRY_PACKAGE--"}
+      [ ! -e "$rp_instances/$rp_new--$rp_suffix" ] || continue
+      mv "$rp_instance" "$rp_instances/$rp_new--$rp_suffix" || return 1
+    done
+  fi
+  if [ -f "$rp_payload" ] && [ ! -L "$rp_payload" ]; then
+    mv "$rp_payload" "$rp_new_payload" || return 1
+  fi
+  if [ -e "$rp_disabled" ] && [ ! -L "$rp_disabled" ]; then
+    mv "$rp_disabled" "$rp_new_disabled" || return 1
+  fi
+
+  # The alias mechanism reads previous_package_id from the program directory,
+  # where compatibility packages have no manifest, so migrate the saved
+  # default explicitly instead.
+  if [ "$ENTRY_KIND" = compat ]; then
+    current_default=$(sed -n 's/^[[:space:]]*frontend_id=//p' "$CONFIG" 2>/dev/null | tail -n 1)
+    case "$current_default" in
+      "$ENTRY_PACKAGE"--*)
+        write_default "$rp_new--${current_default#"$ENTRY_PACKAGE"--}" || return 1
+        ;;
+    esac
   fi
 
   remove_frontend_path_map "$ENTRY_ROOT" "$ENTRY_PACKAGE" || return 1
@@ -786,6 +847,14 @@ case "$cmd" in
       baseos_frontend_read_value "$compat_manifest" compat_source ""
       compat_source=$BASEOS_VALUE
       case "$compat_source" in ''|.|..|*/*|*'|'*) echo "invalid compatibility source name" >&2; exit 1 ;; esac
+      # Full removal below deletes Frontends/<compat_source>. If the sidecar's
+      # source ever drifts from the package name (for example after a partial
+      # rename), that path can belong to a different frontend. Never delete on
+      # a mismatched identity.
+      [ "$compat_source" = "$ENTRY_PACKAGE" ] || {
+        echo "refusing to remove: compat_source '$compat_source' does not match package '$ENTRY_PACKAGE'" >&2
+        exit 1
+      }
       expected_dir=$ENTRY_ROOT/Frontends/$compat_source
       [ "$ENTRY_DIR" = "$expected_dir" ] || { echo "refusing unexpected compatibility program path" >&2; exit 1; }
       [ "$ENTRY_CONFIG" = "$compat_dir/profiles/$ENTRY_PROFILE.conf" ] || {
