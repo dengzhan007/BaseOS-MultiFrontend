@@ -1,0 +1,150 @@
+name: RG34XX native generation reproduction
+
+on:
+  push:
+    branches:
+      - audit/rg34xx-native-rebuild-20261124
+    paths:
+      - .github/workflows/rg34xx-native-generation-rebuild.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  reproduce:
+    name: Rebuild native generation from pinned inputs (host-only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out pinned BaseOS source
+        uses: actions/checkout@v4
+        with:
+          ref: cbe253a43f46cf551cc9a6c79a84015bde3686cf
+
+      - name: Install host compilers and file tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld binutils zstd e2fsprogs gzip unzip
+
+      - name: Restore exact prepared source prefix
+        run: |
+          set -euo pipefail
+          ./fetch-prepared.sh rg34xx
+          printf '%s  %s\n' \
+            "fb75bc4c835fa74ff41c0a1fdbe79b8871a960fc249716847fb7be529835c3c3" \
+            "work/rg34xx/boot-prefix.img" | sha256sum --check -
+
+      - name: Download original 05c39a7 upgrade artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: RG34XX-MultiFrontend-Upgrade-05c39a7fa761145f073982012de039d39a5e9083
+          repository: dengzhan007/BaseOS-MultiFrontend
+          run-id: 44644638985
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: build/source-upgrade-artifact
+
+      - name: Restore boot-gzip source inputs from the original rootfs
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(find build/source-upgrade-artifact -maxdepth 1 -type f -name '*.bosupd' -print -quit)"
+          test -n "$package"
+          tar -tf "$package" | grep -qx 'rootfs.img.gz'
+          mkdir -p build/source-rootfs
+          tar -xOf "$package" rootfs.img.gz > build/source-rootfs/rootfs.img.gz
+          gzip -dc build/source-rootfs/rootfs.img.gz > build/source-rootfs/rootfs.img
+          mkdir -p work/rg34xx/boot-gzip
+          debugfs -R "dump /usr/share/baseos/boot-gzip/boot.img $PWD/work/rg34xx/boot-gzip/boot.img" \
+            build/source-rootfs/rootfs.img
+          debugfs -R "dump /usr/share/baseos/boot-gzip/boot-package.bin $PWD/work/rg34xx/boot-gzip/boot-package.bin" \
+            build/source-rootfs/rootfs.img
+          debugfs -R "dump /usr/share/baseos/boot-gzip/manifest $PWD/work/rg34xx/boot-gzip/manifest" \
+            build/source-rootfs/rootfs.img
+          test "$(stat -c '%s' work/rg34xx/boot-gzip/boot-package.bin)" = "1310720"
+          printf '%s  %s\n' \
+            "56371d984e29e74db63009ce27f829eb0a55ce9007ee5e40c52479b22418af3d" \
+            "work/rg34xx/boot-gzip/boot-package.bin" | sha256sum --check -
+          printf '%s  %s\n' \
+            "5b1e30930a9b0e7642da39ce5c699cfdb03970346c6f2757dcfb063bfc8a0b51" \
+            "work/rg34xx/boot-gzip/boot.img" | sha256sum --check -
+
+      - name: Rebuild exact inventory inputs from the prepared prefix
+        shell: bash
+        run: |
+          set -euo pipefail
+          inventory=work/rg34xx/inventory
+          mkdir -p "$inventory"
+          dd if=work/rg34xx/boot-prefix.img of="$inventory/prefix.bin" \
+            bs=512 count=73728 status=none
+          dd if=work/rg34xx/boot-prefix.img of="$inventory/boot0.bin" \
+            bs=512 skip=16 count=128 status=none
+          dd if=work/rg34xx/boot-prefix.img of="$inventory/env.bin" \
+            bs=512 skip=270336 count=256 status=none
+          printf '%s  %s\n' \
+            "725f8a1552b90659da9dee5e71ef02a3d914ef7f8b5e433584b85829df65b650" \
+            "$inventory/prefix.bin" | sha256sum --check -
+          printf '%s  %s\n' \
+            "b6edbf39af0bf1f35a7e2fd991c8966b04d061e247c81985d2516f695464049b" \
+            "$inventory/boot0.bin" | sha256sum --check -
+          printf '%s  %s\n' \
+            "d1a0856a8fb4c6f3b785943929a59206424a189f92efcbea48c26b31f472a396" \
+            "$inventory/env.bin" | sha256sum --check -
+
+      - name: Restore pinned U-Boot v2026.10 archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          destination=work/h700-loader/mainline/u-boot-v2026.10.tar.gz
+          mkdir -p "$(dirname "$destination")"
+          curl --fail --location --retry 3 --retry-all-errors --silent --show-error \
+            "https://github.com/u-boot/u-boot/archive/refs/tags/v2026.10.tar.gz" \
+            -o "$destination"
+          printf '%s  %s\n' \
+            "f943a88389c8fd70a6b0d061a88267465e143c7ca6ea2b75837ab20f5b60c739" \
+            "$destination" | sha256sum --check -
+          test "$(tar -tzf "$destination" | head -n 1 | cut -d/ -f1)" = "u-boot-2026.10"
+
+      - name: Provide the pinned LLD path expected by native/build.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          lld="$(command -v ld.lld)"
+          directory="$HOME/.rustup/toolchains/recovered/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld"
+          mkdir -p "$directory"
+          ln -sf "$lld" "$directory/ld.lld"
+          test -x "$directory/ld.lld"
+
+      - name: Reproduce native loader, firmware, image and generation
+        run: |
+          set -euo pipefail
+          python3 experiments/h700-boot-speed/native/build.py \
+            rg34xx work/rg34xx/inventory build/native-reproduction
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("build/native-reproduction/manifest.json").read_text())
+          expected = "022f0d8816c861ebbec05f0d0d7f513d6b974d9930661d20fa8ad51b7b4c0fee"
+          assert manifest["generation"] == expected, (manifest["generation"], expected)
+          assert manifest["firmware_sha256"] == "dc9dc3ae66b30244911e7054ca66136991626cabb0d59c796c4b253a126f28e9"
+          assert manifest["image_sha256"] == "d71e5bd87b23fb409d7a837cf90d153ae117af518fe6ee330a96d2c7a5f76fc3"
+          print(json.dumps({
+              "target": manifest["target"],
+              "generation": manifest["generation"],
+              "image_bytes": manifest["image_bytes"],
+              "image_sha256": manifest["image_sha256"],
+              "loader_bytes": manifest["loader_bytes"],
+              "loader_sha256": manifest["loader_sha256"],
+              "firmware_bytes": manifest["firmware_bytes"],
+              "firmware_sha256": manifest["firmware_sha256"],
+              "durable_install_eligible": manifest["durable_install_eligible"],
+          }, indent=2))
+          PY
+
+      - name: Publish only the reproduction manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: RG34XX-Native-Generation-Reproduction-${{ github.sha }}
+          path: build/native-reproduction/manifest.json
+          if-no-files-found: error
+          retention-days: 7
