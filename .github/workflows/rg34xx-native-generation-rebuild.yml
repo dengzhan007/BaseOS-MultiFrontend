@@ -22,6 +22,15 @@ jobs:
         with:
           ref: cbe253a43f46cf551cc9a6c79a84015bde3686cf
 
+      - name: Check out committed RG34XX capsule reference
+        uses: actions/checkout@v4
+        with:
+          repository: dengzhan007/BaseOS-MultiFrontend
+          ref: 339e1cd5f84a6178c496257f835beb3388b8d9f9
+          path: expected-reference
+          sparse-checkout: manifest/native/rg34xx/capsule.bin
+          sparse-checkout-cone-mode: false
+
       - name: Set up Python for pinned boot-emulation dependency
         uses: actions/setup-python@v5
         with:
@@ -30,9 +39,19 @@ jobs:
       - name: Install host compilers, file tools and boot-emulation dependency
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld binutils zstd e2fsprogs gzip unzip
-          python -m pip install --disable-pip-version-check unicorn==2.1.3
-          python -c "import unicorn; print('unicorn', unicorn.__version__)"
+          sudo apt-get install -y clang lld binutils zstd e2fsprogs gzip unzip \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            build-essential make bc bison flex libssl-dev libgnutls28-dev \
+            libncurses-dev libncursesw5-dev python3-dev swig device-tree-compiler
+          python -m pip install --disable-pip-version-check \
+            unicorn==2.1.3 capstone==5.0.3 pyelftools==0.31
+          python - <<'PY'
+          import capstone, unicorn
+          print("unicorn", unicorn.__version__)
+          print("capstone", capstone.__version__)
+          PY
+          aarch64-linux-gnu-gcc --version | head -n 1
+          gcc --version | head -n 1
 
       - name: Restore exact prepared source prefix
         run: |
@@ -174,18 +193,140 @@ jobs:
               "policy": policy,
               "durable_install_eligible": manifest["durable_install_eligible"],
           }
-          (root / "comparison.json").write_text(json.dumps(comparison, indent=2, sort_keys=True) + "\\n")
+          (root / "comparison.json").write_text(json.dumps(comparison, indent=2, sort_keys=True) + "\n")
+          print(json.dumps(comparison, indent=2, sort_keys=True))
+          PY
+
+      - name: Build raw-capsule AArch64 SPL with host cross-toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import runpy
+          import subprocess
+          import sys
+
+          root = pathlib.Path.cwd()
+          script = root / "experiments/h700-boot-speed/spl/build-early-mmc.py"
+          output = (root / "work/h700-loader/mainline/spl-rg34xx-raw-capsule").resolve()
+          boot0 = (root / "work/rg34xx/inventory/boot0.bin").resolve()
+          package = (root / "work/rg34xx/boot-gzip/boot-package.bin").resolve()
+          native = (root / "build/native-reproduction").resolve()
+          original_run = subprocess.run
+
+          def remap(value):
+              if isinstance(value, str):
+                  return value.replace(f"/work/{output.name}/", str(output) + "/")
+              return value
+
+          def host_run(command, *args, **kwargs):
+              if isinstance(command, (list, tuple)) and len(command) >= 4 and list(command[:3]) == [
+                  "docker", "exec", "baseos-h700-mainline"
+              ]:
+                  inner = [remap(part) for part in command[3:]]
+                  return original_run(inner, *args, **kwargs)
+              return original_run(command, *args, **kwargs)
+
+          subprocess.run = host_run
+          sys.argv = [
+              str(script), str(output),
+              "--boot0", str(boot0),
+              "--dram",
+              "--handoff-package", str(package),
+              "--native-loader", str(native),
+              "--raw-capsule",
+          ]
+          runpy.run_path(str(script), run_name="__main__")
+          PY
+          test "$(stat -c '%s' work/h700-loader/mainline/spl-rg34xx-raw-capsule/spl.bin)" = "49152"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("work/h700-loader/mainline/spl-rg34xx-raw-capsule")
+          m = json.loads((p / "manifest.json").read_text())
+          assert m["protocol_version"] == 2
+          assert m["inner_mode"] == "adopt-only"
+          assert m["supports_primary_restore"] is False
+          assert m["resume_compiled"] is False
+          assert m["journal_compiled"] is False
+          assert m["normal_media_writes"] is False
+          assert m["durable_install_eligible"] is False
+          print(json.dumps({
+              "spl_bytes": m["spl_bytes"],
+              "spl_sha256": m["spl_sha256"],
+              "generation_cookie": m["generation_cookie"],
+              "protocol_version": m["protocol_version"],
+              "inner_mode": m["inner_mode"],
+              "normal_media_writes": m["normal_media_writes"],
+          }, indent=2))
+          PY
+
+      - name: Build and execute raw-capsule host proofs
+        run: |
+          set -euo pipefail
+          python3 experiments/h700-boot-speed/native/capsule/build.py \
+            work/h700-loader/mainline/spl-rg34xx-raw-capsule \
+            work/rg34xx/inventory/boot0.bin \
+            build/native-reproduction \
+            build/native-capsule
+          python3 experiments/h700-boot-speed/native/capsule/verify.py build/native-capsule
+          python3 experiments/h700-boot-speed/native/capsule/verify-entry.py build/native-capsule
+
+      - name: Compare capsule to the committed RG34XX deployment artifact
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          expected = Path("expected-reference/manifest/native/rg34xx/capsule.bin").read_bytes()
+          actual = Path("build/native-capsule/capsule.egon.bin").read_bytes()
+          spl = json.loads(Path("work/h700-loader/mainline/spl-rg34xx-raw-capsule/manifest.json").read_text())
+          capsule = json.loads(Path("build/native-capsule/manifest.json").read_text())
+          proof = json.loads(Path("build/native-capsule/verification.json").read_text())
+          entry = json.loads(Path("build/native-capsule/entry-verification.json").read_text())
+          comparison = {
+              "expected_capsule_bytes": len(expected),
+              "actual_capsule_bytes": len(actual),
+              "expected_capsule_sha256": hashlib.sha256(expected).hexdigest(),
+              "actual_capsule_sha256": hashlib.sha256(actual).hexdigest(),
+              "capsule_byte_exact_match": expected == actual,
+              "different_byte_count": sum(a != b for a, b in zip(expected, actual)) if len(expected) == len(actual) else None,
+              "spl_bytes": spl["spl_bytes"],
+              "spl_sha256": spl["spl_sha256"],
+              "generation": capsule["generation"],
+              "generation_cookie": capsule["generation_cookie"],
+              "native_sha256": capsule["native_sha256"],
+              "stock_sha256": capsule["stock_sha256"],
+              "verification_passed": proof["passed"],
+              "verification_cases": len(proof["cases"]),
+              "entry_verification_passed": entry["passed"],
+              "entry_verification_cases": len(entry["cases"]),
+              "hardware_qualified": False,
+              "durable_install_eligible": False,
+          }
+          Path("build/native-capsule/comparison.json").write_text(
+              json.dumps(comparison, indent=2, sort_keys=True) + "\n"
+          )
           print(json.dumps(comparison, indent=2, sort_keys=True))
           PY
 
       - name: Publish native rebuild comparison (text only)
         uses: actions/upload-artifact@v4
         with:
-          name: RG34XX-Native-Generation-Diagnostic-${{ github.sha }}
+          name: RG34XX-SPL-Capsule-Reproduction-${{ github.sha }}
           path: |
             build/native-reproduction/manifest.json
             build/native-reproduction/policy.json
             build/native-reproduction/native-generated.h
             build/native-reproduction/comparison.json
+            work/h700-loader/mainline/spl-rg34xx-raw-capsule/manifest.json
+            work/h700-loader/mainline/spl-rg34xx-raw-capsule/symbols.txt
+            work/h700-loader/mainline/spl-rg34xx-raw-capsule/configure.log
+            work/h700-loader/mainline/spl-rg34xx-raw-capsule/build.log
+            build/native-capsule/manifest.json
+            build/native-capsule/verification.json
+            build/native-capsule/entry-verification.json
+            build/native-capsule/comparison.json
           if-no-files-found: error
           retention-days: 7
