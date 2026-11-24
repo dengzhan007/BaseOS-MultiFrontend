@@ -142,7 +142,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 experiments/h700-boot-speed/native/build.py \
-            rg34xx work/rg34xx/inventory build/native-reproduction
+            rg34xx work/rg34xx/inventory build/native-reproduction --raw-capsule
           python3 - <<'PY'
           import json
           from pathlib import Path
