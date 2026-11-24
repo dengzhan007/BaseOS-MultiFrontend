@@ -81,7 +81,7 @@ jobs:
               "kernel_sha256": fields["BOOT_KERNEL_SHA256"],
           }
           Path("work/rg34xx/boot-gzip/manifest.json").write_text(
-              json.dumps(manifest, sort_keys=True, indent=2) + "\\n"
+              json.dumps(manifest, sort_keys=True, indent=2) + "\n"
           )
           PY
           test "$(stat -c '%s' work/rg34xx/boot-gzip/boot-package.bin)" = "1310720"
