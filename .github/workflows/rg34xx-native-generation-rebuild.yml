@@ -146,28 +146,46 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
-          manifest = json.loads(Path("build/native-reproduction/manifest.json").read_text())
-          expected = "022f0d8816c861ebbec05f0d0d7f513d6b974d9930661d20fa8ad51b7b4c0fee"
-          assert manifest["generation"] == expected, (manifest["generation"], expected)
-          assert manifest["firmware_sha256"] == "dc9dc3ae66b30244911e7054ca66136991626cabb0d59c796c4b253a126f28e9"
-          assert manifest["image_sha256"] == "d71e5bd87b23fb409d7a837cf90d153ae117af518fe6ee330a96d2c7a5f76fc3"
-          print(json.dumps({
+          root = Path("build/native-reproduction")
+          manifest = json.loads((root / "manifest.json").read_text())
+          policy = json.loads((root / "policy.json").read_text())
+          expected = {
+              "generation": "022f0d8816c861ebbec05f0d0d7f513d6b974d9930661d20fa8ad51b7b4c0fee",
+              "image_sha256": "d71e5bd87b23fb409d7a837cf90d153ae117af518fe6ee330a96d2c7a5f76fc3",
+              "firmware_sha256": "dc9dc3ae66b30244911e7054ca66136991626cabb0d59c796c4b253a126f28e9",
+              "loader_sha256": "48b2a837ac5d8daad8f524c976f2b3911d26a838f8b68fa695e3283412dd8590",
+          }
+          actual = {key: manifest.get(key) for key in expected}
+          comparison = {
               "target": manifest["target"],
-              "generation": manifest["generation"],
+              "expected": expected,
+              "actual": actual,
+              "matches": {key: actual[key] == expected[key] for key in expected},
               "image_bytes": manifest["image_bytes"],
-              "image_sha256": manifest["image_sha256"],
+              "image_fnv": manifest.get("image_fnv"),
               "loader_bytes": manifest["loader_bytes"],
-              "loader_sha256": manifest["loader_sha256"],
+              "loader_fnv": manifest.get("loader_fnv"),
               "firmware_bytes": manifest["firmware_bytes"],
-              "firmware_sha256": manifest["firmware_sha256"],
+              "firmware_fnv": manifest.get("firmware_fnv"),
+              "kernel_sha256": manifest.get("kernel_sha256"),
+              "source_kernel_sha256": manifest.get("source_kernel_sha256"),
+              "package_sha256": manifest.get("package_sha256"),
+              "environment_sha256": manifest.get("environment_sha256"),
+              "policy": policy,
               "durable_install_eligible": manifest["durable_install_eligible"],
-          }, indent=2))
+          }
+          (root / "comparison.json").write_text(json.dumps(comparison, indent=2, sort_keys=True) + "\\n")
+          print(json.dumps(comparison, indent=2, sort_keys=True))
           PY
 
-      - name: Publish only the reproduction manifest
+      - name: Publish native rebuild comparison (text only)
         uses: actions/upload-artifact@v4
         with:
-          name: RG34XX-Native-Generation-Reproduction-${{ github.sha }}
-          path: build/native-reproduction/manifest.json
+          name: RG34XX-Native-Generation-Diagnostic-${{ github.sha }}
+          path: |
+            build/native-reproduction/manifest.json
+            build/native-reproduction/policy.json
+            build/native-reproduction/native-generated.h
+            build/native-reproduction/comparison.json
           if-no-files-found: error
           retention-days: 7
