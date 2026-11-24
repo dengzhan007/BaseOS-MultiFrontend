@@ -225,7 +225,18 @@ jobs:
                   "docker", "exec", "baseos-h700-mainline"
               ]:
                   inner = [remap(part) for part in command[3:]]
-                  return original_run(inner, *args, **kwargs)
+                  try:
+                      return original_run(inner, *args, **kwargs)
+                  except subprocess.CalledProcessError:
+                      for name in ("configure.log", "build.log"):
+                          log = output / name
+                          print(f"===== {name} tail =====", flush=True)
+                          if log.exists():
+                              lines = log.read_text(errors="replace").splitlines()
+                              print("\\n".join(lines[-180:]), flush=True)
+                          else:
+                              print(f"missing: {log}", flush=True)
+                      raise
               return original_run(command, *args, **kwargs)
 
           subprocess.run = host_run
@@ -311,7 +322,8 @@ jobs:
           print(json.dumps(comparison, indent=2, sort_keys=True))
           PY
 
-      - name: Publish native rebuild comparison (text only)
+      - name: Publish native rebuild comparison and failure logs (text only)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: RG34XX-SPL-Capsule-Reproduction-${{ github.sha }}
@@ -328,5 +340,5 @@ jobs:
             build/native-capsule/verification.json
             build/native-capsule/entry-verification.json
             build/native-capsule/comparison.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
