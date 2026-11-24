@@ -68,6 +68,22 @@ jobs:
             build/source-rootfs/rootfs.img
           debugfs -R "dump /usr/share/baseos/boot-gzip/manifest $PWD/work/rg34xx/boot-gzip/manifest" \
             build/source-rootfs/rootfs.img
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          fields = dict(
+              line.split("=", 1)
+              for line in Path("work/rg34xx/boot-gzip/manifest").read_text().splitlines()
+              if "=" in line
+          )
+          manifest = {
+              "boot_image_sha256": fields["BOOT_BOOT_IMAGE_SHA256"],
+              "kernel_sha256": fields["BOOT_KERNEL_SHA256"],
+          }
+          Path("work/rg34xx/boot-gzip/manifest.json").write_text(
+              json.dumps(manifest, sort_keys=True, indent=2) + "\\n"
+          )
+          PY
           test "$(stat -c '%s' work/rg34xx/boot-gzip/boot-package.bin)" = "1310720"
           printf '%s  %s\n' \
             "56371d984e29e74db63009ce27f829eb0a55ce9007ee5e40c52479b22418af3d" \
